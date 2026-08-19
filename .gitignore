@@ -1,0 +1,8 @@
+node_modules/
+.next/
+out/
+data/
+_scratch/
+*.tsbuildinfo
+next-env.d.ts.bak
+form4-review-tier2.png
