@@ -96,12 +96,24 @@ export default function FormView({ form, scores, treatments, reviews, reviewerNa
     <div className="print-area">
       {/* Header */}
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <div className="form-doc-head">
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>FORM PENILAIAN KARYAWAN</div>
+            <div className="form-doc-title">FORM PENILAIAN KARYAWAN</div>
             <div className="muted small">{FORM_CODE}</div>
+            {isManagerial && (
+              <div style={{ marginTop: 8 }}>
+                <span className="badge badge-review">Posisi Managerial</span>
+              </div>
+            )}
           </div>
-          {isManagerial && <span className="badge badge-review">Posisi Managerial</span>}
+          {/* wordmark hitam — versi untuk latar terang / dokumen cetak */}
+          <img
+            src="/brand/logo-lockup-dark.png"
+            alt="PT. Prima Agro Tech"
+            className="form-doc-logo"
+            width={1999}
+            height={648}
+          />
         </div>
         <div className="form-head-grid">
           <span className="muted">No. ID</span><span>:</span><span>{form.emp_no}</span>
@@ -301,7 +313,7 @@ export default function FormView({ form, scores, treatments, reviews, reviewerNa
         }
         if (rows.length === 0) return null;
         return (
-          <div className="card print-block no-print-none">
+          <div className="card print-block no-print-none table-scroll">
             <div className="card-title">Riwayat Review</div>
             <table className="data">
               <thead>

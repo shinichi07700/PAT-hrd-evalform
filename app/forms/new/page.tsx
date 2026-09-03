@@ -75,7 +75,7 @@ export default async function NewFormPage({
         {subordinates.length === 0 ? (
           <div className="alert alert-info">Anda tidak ditetapkan sebagai Tier‑1 untuk karyawan mana pun.</div>
         ) : (
-          <div className="card">
+          <div className="card table-scroll">
             <table className="data">
               <thead>
                 <tr><th>Nama</th><th>Jabatan</th><th>Division</th><th>Department</th><th></th></tr>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import "./globals.css";
@@ -8,8 +8,11 @@ import { listSubordinates } from "@/lib/repo";
 
 export const metadata: Metadata = {
   title: "Form Penilaian Karyawan — PAT-F-HRD-13",
-  description: "Sistem penilaian kinerja karyawan HRD",
+  description: "Sistem penilaian kinerja karyawan HRD PT. Prima Agro Tech",
 };
+
+// warna address bar / UI mobile mengikuti warna identitas
+export const viewport: Viewport = { themeColor: "#14532d" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
@@ -28,7 +31,11 @@ function NavBar({ user }: { user: NonNullable<Awaited<ReturnType<typeof getSessi
     <nav className="nav no-print">
       <div className="nav-inner">
         <Link href="/" className="nav-brand">
-          Penilaian Karyawan<span>PAT-F-HRD-13 Rev.06</span>
+          <img src="/brand/logo-mark.png" alt="" className="nav-logo" width={2000} height={1993} />
+          <span className="nav-brand-text">
+            <b>PT. Prima Agro Tech</b>
+            <small>Form Penilaian Karyawan · PAT-F-HRD-13 Rev.06</small>
+          </span>
         </Link>
         <div className="nav-links">
           <Link href="/">Dashboard</Link>

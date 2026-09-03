@@ -56,43 +56,45 @@ export function FormsTable({
       {rows.length === 0 ? (
         <p className="muted">Tidak ada form dengan status terpilih.</p>
       ) : (
-        <table className="data">
-          <thead>
-            <tr>
-              {showEmployee && <th>Karyawan</th>}
-              <th>Periode</th>
-              <th>Status</th>
-              <th>Dibuat</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((f) => (
-              <tr key={f.id}>
-                {showEmployee && (
-                  <td>
-                    <b>{f.employee_name}</b>
-                    <div className="muted small">
-                      {f.emp_no} · {f.position_name ?? "-"}
-                    </div>
-                  </td>
-                )}
-                <td>
-                  {fmtDate(f.period_start)} s/d {fmtDate(f.period_end)}
-                </td>
-                <td>
-                  <StatusBadge status={f.status} />
-                </td>
-                <td className="muted small">{fmtDate(f.created_at)}</td>
-                <td className="right">
-                  <Link href={`/forms/${f.id}`} className="btn btn-sm">
-                    Buka
-                  </Link>
-                </td>
+        <div className="table-scroll">
+          <table className="data">
+            <thead>
+              <tr>
+                {showEmployee && <th>Karyawan</th>}
+                <th>Periode</th>
+                <th>Status</th>
+                <th>Dibuat</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((f) => (
+                <tr key={f.id}>
+                  {showEmployee && (
+                    <td>
+                      <b>{f.employee_name}</b>
+                      <div className="muted small">
+                        {f.emp_no} · {f.position_name ?? "-"}
+                      </div>
+                    </td>
+                  )}
+                  <td>
+                    {fmtDate(f.period_start)} s/d {fmtDate(f.period_end)}
+                  </td>
+                  <td>
+                    <StatusBadge status={f.status} />
+                  </td>
+                  <td className="muted small">{fmtDate(f.created_at)}</td>
+                  <td className="right">
+                    <Link href={`/forms/${f.id}`} className="btn btn-sm">
+                      Buka
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

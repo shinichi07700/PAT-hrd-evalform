@@ -25,7 +25,8 @@ export default async function DashboardPage() {
     const completed = forms.filter((f) => f.status === "completed").length;
     return (
       <div className="container-wide">
-        <h1>Dashboard Admin</h1>
+        <h1>Selamat Datang, {user.name}</h1>
+        <p className="muted" style={{ marginTop: -8 }}>HR Administrator</p>
         <div className="stat-cards">
           <div className="stat-card">
             <div className="num">{empCount}</div>
@@ -65,12 +66,11 @@ export default async function DashboardPage() {
 
   return (
     <div className="container">
-      <h1>Selamat datang, {user.name}</h1>
-      {user.position_name && (
-        <p className="muted" style={{ marginTop: -8 }}>
-          {user.position_name} · {user.emp_no}
-        </p>
-      )}
+      <h1>Selamat Datang, {user.name}</h1>
+      <p className="muted" style={{ marginTop: -8 }}>
+        {user.position_name ? `${user.position_name} · ` : ""}
+        {user.emp_no}
+      </p>
 
       {subordinates.length > 0 && (
         <div className="card">

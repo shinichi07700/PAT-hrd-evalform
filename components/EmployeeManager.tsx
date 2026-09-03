@@ -322,7 +322,7 @@ export default function EmployeeManager({
         </div>
       )}
 
-      <div className="card" style={{ overflowX: "auto" }}>
+      <div className="card table-scroll">
         <table className="data">
           <thead>
             <tr>

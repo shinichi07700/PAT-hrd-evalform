@@ -112,7 +112,7 @@ export default function AdminFormsTable({
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="card">
+      <div className="card table-scroll">
         <table className="data">
           <thead>
             <tr>

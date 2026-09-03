@@ -56,7 +56,7 @@ export default function LoginForm() {
         {pending ? "Memproses..." : "Masuk"}
       </button>
       <p className="login-hint">
-        Masuk dengan email kantor Anda. Password awal sama dengan No. ID karyawan, kecuali akun ADMIN dan MD.
+        Masuk dengan email kantor Anda. Password awal sama dengan No. ID karyawan.
       </p>
     </form>
   );

@@ -2,3 +2,5 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf
+# logo & ikon tab: jangan pernah disentuh konversi EOL
+*.png binary

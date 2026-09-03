@@ -8,7 +8,10 @@ export default async function LoginPage() {
   return (
     <div className="login-wrap">
       <div className="login-shell">
-        <div className="login-brand">PAT</div>
+        <div className="login-lockup">
+          {/* versi wordmark putih — latar login hijau tua */}
+          <img src="/brand/logo-lockup-light.png" alt="PT. Prima Agro Tech" width={1999} height={648} />
+        </div>
         <div className="login-card">
           <div className="login-head">
             <div className="login-title">Form Penilaian Karyawan</div>
@@ -16,7 +19,7 @@ export default async function LoginPage() {
           </div>
           <LoginForm />
         </div>
-        <div className="login-foot">&copy; Prima Agrotech &middot; Human Resource</div>
+        <div className="login-foot">&copy; PT. Prima Agro Tech &middot; Human Resource</div>
       </div>
     </div>
   );
