@@ -161,17 +161,20 @@ function init(conn: DatabaseSync) {
       division TEXT NOT NULL,
       name TEXT NOT NULL,
       is_managerial INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(department, division, name)
+      UNIQUE(department, division, name, is_managerial)
     );
 
     CREATE TABLE IF NOT EXISTS employees (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      emp_no TEXT NOT NULL UNIQUE,
+      emp_no TEXT NOT NULL,
       name TEXT NOT NULL,
       email TEXT,
       position_id INTEGER REFERENCES positions(id),
       join_date TEXT,
       supervisor_id INTEGER REFERENCES employees(id),
+      tier1_id INTEGER REFERENCES employees(id),
+      tier2_id INTEGER REFERENCES employees(id),
+      top_mgmt_id INTEGER REFERENCES employees(id),
       is_top_management INTEGER NOT NULL DEFAULT 0,
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'employee',
@@ -238,22 +241,112 @@ function init(conn: DatabaseSync) {
   // index so blank/NULL rows can coexist during backfill while real emails stay unique.
   const empCols = conn.prepare("PRAGMA table_info(employees)").all() as { name: string }[];
   if (!empCols.some((c) => c.name === "email")) conn.exec("ALTER TABLE employees ADD COLUMN email TEXT");
+  // review chain is stored PER EMPLOYEE (Google Sheet = source of truth):
+  // tier1 = penilai, tier2 = reviewer kedua (NULL = lewati), top_mgmt = approver akhir.
+  if (!empCols.some((c) => c.name === "tier1_id")) conn.exec("ALTER TABLE employees ADD COLUMN tier1_id INTEGER REFERENCES employees(id)");
+  if (!empCols.some((c) => c.name === "tier2_id")) conn.exec("ALTER TABLE employees ADD COLUMN tier2_id INTEGER REFERENCES employees(id)");
+  if (!empCols.some((c) => c.name === "top_mgmt_id")) conn.exec("ALTER TABLE employees ADD COLUMN top_mgmt_id INTEGER REFERENCES employees(id)");
+  // backfill tiers from the old supervisor tree once
+  conn.exec("UPDATE employees SET tier1_id = supervisor_id WHERE tier1_id IS NULL AND supervisor_id IS NOT NULL");
   conn.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_email ON employees(email) WHERE email IS NOT NULL AND email <> ''"
   );
+
+  // Data fix: md@primaagrotech.com belongs to Adian Romiani Naibaho (PAT-040,
+  // Microbia Drying Manager) in the Google Sheet. The Managing Director's own
+  // login therefore moves to alihan@primaagrotech.com BEFORE any import runs,
+  // so the upsert-by-email never overwrites him. Guarded: only renames the row
+  // that is still named Alihan, and only when the target address is free.
+  conn.exec(`
+    UPDATE employees SET email = 'alihan@primaagrotech.com'
+    WHERE lower(email) = 'md@primaagrotech.com' AND lower(name) = 'alihan tjohjono'
+      AND NOT EXISTS (SELECT 1 FROM employees WHERE lower(email) = 'alihan@primaagrotech.com')
+  `);
+
+  // emp_no is no longer UNIQUE (dual-position staff share one Employee ID, e.g. PAT-007).
+  // SQLite cannot drop a column constraint — rebuild the table when the old shape is found.
+  const empSql = (conn.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'").get() as any)?.sql ?? "";
+  if (/emp_no\s+TEXT\s+NOT\s+NULL\s+UNIQUE/i.test(empSql)) {
+    conn.exec("PRAGMA foreign_keys = OFF;");
+    conn.exec("BEGIN");
+    try {
+      conn.exec(`
+        CREATE TABLE employees_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          emp_no TEXT NOT NULL,
+          name TEXT NOT NULL,
+          email TEXT,
+          position_id INTEGER REFERENCES positions(id),
+          join_date TEXT,
+          supervisor_id INTEGER REFERENCES employees(id),
+          tier1_id INTEGER REFERENCES employees(id),
+          tier2_id INTEGER REFERENCES employees(id),
+          top_mgmt_id INTEGER REFERENCES employees(id),
+          is_top_management INTEGER NOT NULL DEFAULT 0,
+          password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'employee',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO employees_new (id, emp_no, name, email, position_id, join_date, supervisor_id,
+                                   tier1_id, tier2_id, top_mgmt_id, is_top_management, password_hash, role, created_at)
+        SELECT id, emp_no, name, email, position_id, join_date, supervisor_id,
+               tier1_id, tier2_id, top_mgmt_id, is_top_management, password_hash, role, created_at
+        FROM employees;
+        DROP TABLE employees;
+        ALTER TABLE employees_new RENAME TO employees;
+      `);
+      conn.exec("COMMIT");
+    } catch (e) {
+      conn.exec("ROLLBACK");
+      throw e;
+    } finally {
+      conn.exec("PRAGMA foreign_keys = ON;");
+    }
+    conn.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_email ON employees(email) WHERE email IS NOT NULL AND email <> ''"
+    );
+  }
+
+  // positions: same title may exist as Managerial AND Non-Managerial (e.g. "Microbia
+  // Preservation Supervisor"), so is_managerial joins the unique key.
+  const posSql = (conn.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='positions'").get() as any)?.sql ?? "";
+  if (/UNIQUE\s*\(\s*department,\s*division,\s*name\s*\)/i.test(posSql) && !/is_managerial\s*\)/i.test(posSql)) {
+    conn.exec("PRAGMA foreign_keys = OFF;");
+    conn.exec("BEGIN");
+    try {
+      conn.exec(`
+        CREATE TABLE positions_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          department TEXT NOT NULL,
+          division TEXT NOT NULL,
+          name TEXT NOT NULL,
+          is_managerial INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(department, division, name, is_managerial)
+        );
+        INSERT INTO positions_new (id, department, division, name, is_managerial)
+        SELECT id, department, division, name, is_managerial FROM positions;
+        DROP TABLE positions;
+        ALTER TABLE positions_new RENAME TO positions;
+      `);
+      conn.exec("COMMIT");
+    } catch (e) {
+      conn.exec("ROLLBACK");
+      throw e;
+    } finally {
+      conn.exec("PRAGMA foreign_keys = ON;");
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Seed: positions from template + demo accounts (3-tier chain + admin)
+// Seed: positions from template + minimal accounts (admin + MD root).
+// Real employees come from the Google Sheet import — no demo staff.
 // ---------------------------------------------------------------------------
 function seed(conn: DatabaseSync) {
   const insPos = conn.prepare(
     "INSERT OR IGNORE INTO positions (department, division, name, is_managerial) VALUES (?, ?, ?, ?)"
   );
   for (const [d, v, n, m] of POSITION_TEMPLATE) insPos.run(d, v, n, m);
-
-  const posId = (name: string) =>
-    (conn.prepare("SELECT id FROM positions WHERE name = ? LIMIT 1").get(name) as any)?.id ?? null;
 
   const insEmp = conn.prepare(`
     INSERT INTO employees (emp_no, name, email, position_id, join_date, supervisor_id, is_top_management, password_hash, role)
@@ -263,20 +356,7 @@ function seed(conn: DatabaseSync) {
   // Admin (HR) account
   insEmp.run("ADMIN", "HR Administrator", "admin@primaagrotech.com", null, null, null, 0, hashPassword("admin123"), "admin");
 
-  // Top Management — Managing Director (final approver of every form)
-  const md = insEmp.run("MD-001", "Managing Director", "md@primaagrotech.com", null, "2015-01-05", null, 1, hashPassword("md123"), "employee");
-
-  // Demo chain: Production Team -> Production Team Leader -> Operations Manager -> MD
-  const mgr = insEmp.run(
-    "EMP-101", "Budi Santoso", "emp101@primaagrotech.com", posId("Operations Manager"), "2018-03-12",
-    Number(md.lastInsertRowid), 0, hashPassword("EMP-101"), "employee"
-  );
-  const leader = insEmp.run(
-    "EMP-102", "Siti Rahayu", "emp102@primaagrotech.com", posId("Production Team Leader"), "2020-07-01",
-    Number(mgr.lastInsertRowid), 0, hashPassword("EMP-102"), "employee"
-  );
-  insEmp.run(
-    "EMP-103", "Andi Wijaya", "emp103@primaagrotech.com", posId("Production Team"), "2022-11-20",
-    Number(leader.lastInsertRowid), 0, hashPassword("EMP-103"), "employee"
-  );
+  // Top Management — Managing Director, root of the org tree (nobody evaluates him).
+  // Not listed in the employee sheet; his login must not use md@ (that is PAT-040's).
+  insEmp.run("MD-001", "Alihan Tjohjono", "alihan@primaagrotech.com", null, null, null, 1, hashPassword("md123"), "employee");
 }

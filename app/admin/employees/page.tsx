@@ -17,8 +17,9 @@ export default async function AdminEmployeesPage() {
     <div className="container-wide">
       <h1>Kelola Karyawan</h1>
       <p className="muted">
-        Tambahkan karyawan beserta jabatan (dari Template Job Position Structure) dan atasannya. Rantai review 3
-        tingkat ditentukan otomatis dari struktur atasan.
+        Setiap karyawan memiliki rantai review yang tersimpan eksplisit: Tier‑1 (penilai), Tier‑2 (reviewer kedua,
+        boleh kosong), dan Top Management (approver akhir). Rantai ini yang dipakai alur form — tidak ada penurunan
+        otomatis dari struktur atasan.
       </p>
       <EmployeeManager
         employees={employees.map((e) => ({
@@ -28,12 +29,16 @@ export default async function AdminEmployeesPage() {
           email: e.email,
           position_id: e.position_id,
           join_date: e.join_date,
-          supervisor_id: e.supervisor_id,
+          tier1_id: e.tier1_id,
+          tier2_id: e.tier2_id,
+          top_mgmt_id: e.top_mgmt_id,
           department: e.department,
           division: e.division,
           position_name: e.position_name,
           is_managerial: !!e.is_managerial,
-          supervisor_name: e.supervisor_name,
+          tier1_name: e.tier1_name,
+          tier2_name: e.tier2_name,
+          top_mgmt_name: e.top_mgmt_name,
           role: e.role,
         }))}
         positions={positions.map((p) => ({

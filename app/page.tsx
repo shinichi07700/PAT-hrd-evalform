@@ -79,8 +79,9 @@ export default async function DashboardPage() {
             <Link href="/forms/new" className="btn btn-primary">+ Buat Penilaian Baru</Link>
           </div>
           <div className="alert alert-info">
-            Anda dapat menilai {subordinates.length} karyawan pada lini laporan Anda. Form baru otomatis mengikuti
-            alur: Anda (Tier 1) → atasan Anda (Tier 2, bila ada) → konfirmasi karyawan → persetujuan Managing Director.
+            Anda adalah Tier‑1 (penilai) untuk {subordinates.length} karyawan. Alur form otomatis mengikuti data
+            karyawan tersebut: Anda (Tier 1) → Tier 2 bila ditetapkan → konfirmasi karyawan → persetujuan Top
+            Management bila ditetapkan.
           </div>
           {myDrafts.length > 0 && (
             <>

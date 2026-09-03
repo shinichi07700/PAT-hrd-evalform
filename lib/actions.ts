@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { db, tx, verifyPassword, hashPassword } from "./db";
 import { SESSION_COOKIE, sessionCookie, getSessionUser } from "./session";
-import { resolveChain, isDescendant, getForm, currentTier } from "./repo";
+import { chainForEmployee, getForm, currentTier } from "./repo";
 import { ALL_ASPECTS, divisorFor } from "./scoring";
 
 export interface ActionResult {
@@ -93,7 +93,8 @@ async function getEvaluatorDraft(input: FormInput) {
   } else {
     employeeId = input.employeeId ?? 0;
     if (!employeeId) return { error: "Pilih karyawan yang akan dinilai." };
-    if (!isDescendant(user.id, employeeId)) return { error: "Anda hanya dapat menilai karyawan pada lini laporan Anda." };
+    // hanya Tier-1 tersimpan (dari Google Sheet) yang boleh menilai seorang karyawan
+    if (chainForEmployee(employeeId).t1 !== user.id) return { error: "Anda hanya dapat menilai karyawan yang Tier-1-nya adalah Anda." };
     const res = db()
       .prepare("INSERT INTO forms (employee_id, evaluator_id, period_start, period_end, status) VALUES (?, ?, ?, ?, 'draft')")
       .run(employeeId, user.id, input.period_start || "", input.period_end || "");
@@ -106,7 +107,7 @@ async function getEvaluatorDraft(input: FormInput) {
        FROM employees e LEFT JOIN positions p ON p.id = e.position_id WHERE e.id = ?`
     )
     .get(employeeId) as { is_managerial: number } | undefined;
-  return { formId, isManagerial: !!target?.is_managerial };
+  return { formId, employeeId, isManagerial: !!target?.is_managerial };
 }
 
 export async function saveDraftAction(input: FormInput): Promise<ActionResult> {
@@ -159,7 +160,8 @@ export async function submitFormAction(input: FormInput & { signature: string })
 
   const formId = owned.formId;
   const user = (await getSessionUser())!;
-  const { t2, mdFinal } = resolveChain(user.id);
+  // rantai review dibaca dari kolom tier karyawan yang dinilai (Google Sheet = sumber kebenaran)
+  const { t2, tm } = chainForEmployee(owned.employeeId ?? null);
   const nextStatus = t2 ? "review2" : "awaiting_ack";
   tx(() => {
     persistFormContent(formId, input);
@@ -172,7 +174,7 @@ export async function submitFormAction(input: FormInput & { signature: string })
              original_scores = ?, tier2_edits = NULL
          WHERE id = ?`
       )
-      .run(input.signature, nextStatus, user.id, t2, mdFinal, JSON.stringify(input.scores), formId);
+      .run(input.signature, nextStatus, user.id, t2, tm, JSON.stringify(input.scores), formId);
   });
 
   return { ok: true, formId };
@@ -267,7 +269,9 @@ export interface EmployeeInput {
   email: string;
   position_id: number | null;
   join_date: string;
-  supervisor_id: number | null;
+  tier1_id: number | null;
+  tier2_id: number | null;
+  top_mgmt_id: number | null;
   new_password: string;
 }
 
@@ -280,15 +284,18 @@ export async function saveEmployeeAction(input: EmployeeInput): Promise<ActionRe
   const email = input.email.trim().toLowerCase();
   if (!email || !EMAIL_RE.test(email)) return { ok: false, error: "Email wajib diisi dengan format yang benar." };
   const d = db();
+  // supervisor_id kept in sync with tier1_id (legacy code paths / org-tree display)
+  const sup = input.tier1_id;
   try {
     if (input.id) {
       tx(() => {
         d.prepare(
-          `UPDATE employees SET emp_no = ?, name = ?, email = ?, position_id = ?, join_date = ?, supervisor_id = ?
+          `UPDATE employees SET emp_no = ?, name = ?, email = ?, position_id = ?, join_date = ?,
+           tier1_id = ?, tier2_id = ?, top_mgmt_id = ?, supervisor_id = ?
            WHERE id = ?`
         ).run(
           input.emp_no.trim(), input.name.trim(), email, input.position_id, input.join_date || null,
-          input.supervisor_id, input.id
+          sup, input.tier2_id, input.top_mgmt_id, sup, input.id
         );
         if (input.new_password) {
           d.prepare("UPDATE employees SET password_hash = ? WHERE id = ?").run(hashPassword(input.new_password), input.id);
@@ -298,18 +305,38 @@ export async function saveEmployeeAction(input: EmployeeInput): Promise<ActionRe
     }
     const password = input.new_password || input.emp_no.trim();
     const res = d.prepare(
-      `INSERT INTO employees (emp_no, name, email, position_id, join_date, supervisor_id, password_hash, role)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'employee')`
+      `INSERT INTO employees (emp_no, name, email, position_id, join_date, supervisor_id, tier1_id, tier2_id, top_mgmt_id, password_hash, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'employee')`
     ).run(
       input.emp_no.trim(), input.name.trim(), email, input.position_id, input.join_date || null,
-      input.supervisor_id, hashPassword(password)
+      sup, sup, input.tier2_id, input.top_mgmt_id, hashPassword(password)
     );
     return { ok: true, formId: Number(res.lastInsertRowid) };
   } catch (e: any) {
     const msg = String(e?.message ?? "");
     if (msg.includes("idx_employees_email") || msg.toLowerCase().includes("email")) return { ok: false, error: "Email sudah terdaftar." };
-    if (msg.includes("UNIQUE")) return { ok: false, error: "No. ID sudah terdaftar." };
     return { ok: false, error: "Gagal menyimpan karyawan." };
+  }
+}
+
+// Tambah jabatan baru inline dari halaman Karyawan (department · division · name).
+export async function savePositionAction(input: {
+  department: string;
+  division: string;
+  name: string;
+  is_managerial: boolean;
+}): Promise<ActionResult> {
+  const user = await getSessionUser();
+  if (!user || user.role !== "admin") return { ok: false, error: "Akses ditolak." };
+  const [dep, div, nm] = [input.department.trim(), input.division.trim(), input.name.trim()];
+  if (!dep || !div || !nm) return { ok: false, error: "Department, division dan jabatan wajib diisi." };
+  try {
+    db()
+      .prepare("INSERT INTO positions (department, division, name, is_managerial) VALUES (?, ?, ?, ?)")
+      .run(dep, div, nm, input.is_managerial ? 1 : 0);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Jabatan dengan kombinasi itu sudah ada." };
   }
 }
 

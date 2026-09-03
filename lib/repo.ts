@@ -22,22 +22,33 @@ export interface EmployeeRow {
   position_id: number | null;
   join_date: string | null;
   supervisor_id: number | null;
+  tier1_id: number | null;
+  tier2_id: number | null;
+  top_mgmt_id: number | null;
   role: string;
   department: string | null;
   division: string | null;
   position_name: string | null;
   is_managerial: number;
   supervisor_name: string | null;
+  tier1_name: string | null;
+  tier2_name: string | null;
+  top_mgmt_name: string | null;
 }
 
 const EMPLOYEE_SELECT = `
   SELECT e.id, e.emp_no, e.name, e.email, e.position_id, e.join_date, e.supervisor_id,
+         e.tier1_id, e.tier2_id, e.top_mgmt_id,
          e.role,
          p.department, p.division, p.name AS position_name, p.is_managerial,
-         s.name AS supervisor_name
+         s.name AS supervisor_name,
+         t1.name AS tier1_name, t2.name AS tier2_name, tm.name AS top_mgmt_name
   FROM employees e
   LEFT JOIN positions p ON p.id = e.position_id
-  LEFT JOIN employees s ON s.id = e.supervisor_id`;
+  LEFT JOIN employees s ON s.id = e.supervisor_id
+  LEFT JOIN employees t1 ON t1.id = e.tier1_id
+  LEFT JOIN employees t2 ON t2.id = e.tier2_id
+  LEFT JOIN employees tm ON tm.id = e.top_mgmt_id`;
 
 export function getEmployee(id: number): EmployeeRow | null {
   return q1<EmployeeRow>(`${EMPLOYEE_SELECT} WHERE e.id = ?`, id);
@@ -55,14 +66,13 @@ export function listEmployees(): EmployeeRow[] {
   return qAll<EmployeeRow>(`${EMPLOYEE_SELECT} ORDER BY e.emp_no`);
 }
 
-// Employees in the manager's reporting subtree (who they may evaluate).
+// The evaluator's own list: employees whose stored Tier-1 is this manager
+// (the Google Sheet is the source of truth — "his list", not a tree guess).
 export function listSubordinates(managerId: number): EmployeeRow[] {
-  const ids = descendantEmployeeIds(managerId);
-  if (ids.length === 0) return [];
-  const placeholders = ids.map(() => "?").join(",");
   return qAll<EmployeeRow>(
-    `${EMPLOYEE_SELECT} WHERE e.id IN (${placeholders}) ORDER BY e.name`,
-    ...ids
+    `${EMPLOYEE_SELECT} WHERE e.tier1_id = ? AND e.id <> ? ORDER BY e.name`,
+    managerId,
+    managerId
   );
 }
 
@@ -73,42 +83,41 @@ export function listPositions() {
 }
 
 // ---------------------------------------------------------------------------
-// Review chain (evaluator-driven): the Tier 1 evaluator fills & signs the form.
-//   - t2      = the evaluator's own supervisor, but only if it exists and is NOT
-//               the MD (otherwise the MD handles it as the final approver).
-//   - mdFinal = the MD, but only if the evaluator is not the MD themselves.
-// Employee acknowledgment always happens right before the MD signs.
-// The MD is simply the root of the org tree — the employee without an atasan
-// langsung — so no "top management" flag is needed.
+// Review chain — READ from the assessed employee's stored tier columns
+// (imported verbatim from the Google Sheet). No derivation from hierarchy.
+//   tier2_id    = NULL  → form skips Tier 2 (goes straight to acknowledgment)
+//   top_mgmt_id = NULL  → form completes right after acknowledgment
+// The MD (Top Management) is still the org-tree root for display purposes.
 // ---------------------------------------------------------------------------
 export function getTopManagementId(): number | null {
   const row = db()
-    .prepare("SELECT id FROM employees WHERE role = 'employee' AND supervisor_id IS NULL ORDER BY id LIMIT 1")
+    .prepare("SELECT id FROM employees WHERE role = 'employee' AND supervisor_id IS NULL AND tier1_id IS NULL ORDER BY id LIMIT 1")
     .get() as { id: number } | undefined;
   return row?.id ?? null;
 }
 
-export function resolveChain(
-  evaluatorId: number | null
-): { t2: number | null; mdFinal: number | null } {
-  const md = getTopManagementId();
-  if (!evaluatorId) return { t2: null, mdFinal: md };
-  const sup = (db().prepare("SELECT supervisor_id FROM employees WHERE id = ?").get(evaluatorId) as any)
-    ?.supervisor_id as number | null;
-  const t2 = sup && sup !== evaluatorId && sup !== md ? sup : null;
-  const mdFinal = evaluatorId !== md ? md : null;
-  return { t2, mdFinal };
+export function chainForEmployee(
+  employeeId: number | null
+): { t1: number | null; t2: number | null; tm: number | null } {
+  const e = employeeId
+    ? (db().prepare("SELECT tier1_id, tier2_id, top_mgmt_id FROM employees WHERE id = ?").get(employeeId) as any)
+    : null;
+  return {
+    t1: e?.tier1_id ?? null,
+    t2: e?.tier2_id ?? null,
+    tm: e?.top_mgmt_id ?? null,
+  };
 }
 
-// All direct + indirect reports of a manager (reporting subtree). Depth-capped to
-// avoid infinite recursion on accidental supervisor cycles.
+// All direct + indirect reports following the stored Tier-1 links. Depth-capped
+// to avoid infinite recursion on accidental cycles.
 export function descendantEmployeeIds(managerId: number): number[] {
   const rows = qAll<{ id: number }>(
     `WITH RECURSIVE sub(id, depth) AS (
-       SELECT id, 1 FROM employees WHERE supervisor_id = ? AND id <> ?
+       SELECT id, 1 FROM employees WHERE tier1_id = ? AND id <> ?
        UNION ALL
        SELECT e.id, s.depth + 1 FROM employees e
-       JOIN sub s ON e.supervisor_id = s.id
+       JOIN sub s ON e.tier1_id = s.id
        WHERE s.depth < 20 AND e.id <> ?
      )
      SELECT DISTINCT id FROM sub`,
@@ -268,14 +277,15 @@ export function pendingReviewsFor(reviewerId: number): FormRow[] {
   );
 }
 
-// Forms of everyone in the manager's reporting subtree (direct + indirect reports).
+// Forms of everyone in the manager's reporting subtree (direct + indirect
+// reports, following the stored Tier-1 links).
 export function teamFormsFor(managerId: number): FormRow[] {
   return qAll<FormRow>(
     `WITH RECURSIVE sub(id, depth) AS (
-       SELECT id, 1 FROM employees WHERE supervisor_id = ? AND id <> ?
+       SELECT id, 1 FROM employees WHERE tier1_id = ? AND id <> ?
        UNION ALL
        SELECT e.id, s.depth + 1 FROM employees e
-       JOIN sub s ON e.supervisor_id = s.id
+       JOIN sub s ON e.tier1_id = s.id
        WHERE s.depth < 20 AND e.id <> ?
      )
      SELECT f.*, e.emp_no, e.name AS employee_name, e.join_date,
