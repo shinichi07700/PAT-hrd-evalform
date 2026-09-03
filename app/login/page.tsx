@@ -7,12 +7,16 @@ export default async function LoginPage() {
   if (user) redirect("/");
   return (
     <div className="login-wrap">
-      <div className="login-card">
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--brand)" }}>Form Penilaian Karyawan</div>
-          <div className="muted small">PAT-F-HRD-13 Rev.06 — HR Department</div>
+      <div className="login-shell">
+        <div className="login-brand">PAT</div>
+        <div className="login-card">
+          <div className="login-head">
+            <div className="login-title">Form Penilaian Karyawan</div>
+            <div className="login-sub">PAT-F-HRD-13 Rev.06 &mdash; HR Department</div>
+          </div>
+          <LoginForm />
         </div>
-        <LoginForm />
+        <div className="login-foot">&copy; Prima Agrotech &middot; Human Resource</div>
       </div>
     </div>
   );

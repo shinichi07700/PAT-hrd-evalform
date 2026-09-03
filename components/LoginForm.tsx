@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useActionState } from "react";
 import { useRouter } from "next/navigation";
 import { loginAction, ActionResult } from "@/lib/actions";
 
@@ -9,28 +10,53 @@ const initial: ActionResult = { ok: false };
 export default function LoginForm() {
   const [state, formAction, pending] = useActionState(loginAction, initial);
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const passRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (state.ok) router.push("/");
-  }, [state.ok, router]);
+    if (state.ok) {
+      router.push("/");
+      return;
+    }
+    if (state.error) {
+      // email tetap terisi — hanya password yang dikosongkan
+      setPassword("");
+      passRef.current?.focus();
+    }
+  }, [state, router]);
 
   return (
     <form action={formAction}>
       <div className="field">
-        <label>No. ID Karyawan</label>
-        <input type="text" name="emp_no" required autoFocus placeholder="contoh: EMP-103" />
+        <label>Email</label>
+        <input
+          type="email"
+          name="email"
+          required
+          autoFocus
+          placeholder="contoh: emp103@primaagrotech.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
       </div>
       <div className="field">
         <label>Password</label>
-        <input type="password" name="password" required />
+        <input
+          type="password"
+          name="password"
+          required
+          ref={passRef}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
       </div>
       {state.error && <div className="alert alert-error">{state.error}</div>}
-      <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center" }} disabled={pending}>
+      <button className="btn-login" type="submit" disabled={pending}>
         {pending ? "Memproses..." : "Masuk"}
       </button>
-      <p className="muted small" style={{ marginTop: 16, marginBottom: 0 }}>
-        Akun demo: EMP-103 (karyawan), EMP-102, EMP-101, MD-001 (reviewer), ADMIN (admin). Password awal sama dengan
-        No. ID, kecuali ADMIN = admin123 dan MD-001 = md123.
+      <p className="login-hint">
+        Masuk dengan email kantor Anda. Password awal sama dengan No. ID karyawan, kecuali akun ADMIN dan MD.
       </p>
     </form>
   );

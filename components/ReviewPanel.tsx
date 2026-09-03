@@ -6,45 +6,37 @@ import SignaturePad from "./SignaturePad";
 import { reviewAction } from "@/lib/actions";
 import { TREATMENTS } from "@/lib/scoring";
 
-export default function ReviewPanel({
-  formId,
-  tier,
-  showTreatments = false,
-  initialTreatments = [],
-  initialTreatmentOther = "",
-}: {
+interface Props {
   formId: number;
   tier: number;
-  showTreatments?: boolean;
-  initialTreatments?: string[];
-  initialTreatmentOther?: string;
-}) {
+  signerName: string;
+  treatments: string[];
+  treatmentOther: string;
+}
+
+export default function ReviewPanel({ formId, tier, signerName, treatments: initialTr, treatmentOther: initialOther }: Props) {
   const router = useRouter();
-  const [decision, setDecision] = useState<"approve" | "return">("approve");
   const [comment, setComment] = useState("");
+  const [treatments, setTreatments] = useState<string[]>(initialTr);
+  const [treatmentOther, setTreatmentOther] = useState(initialOther);
   const [signature, setSignature] = useState<string | null>(null);
-  const [treatments, setTreatments] = useState<string[]>(initialTreatments);
-  const [treatmentOther, setTreatmentOther] = useState(initialTreatmentOther);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (decision === "approve" && !signature) {
+    if (!signature) {
       return setError("Tanda tangan wajib dibuat untuk menyetujui form.");
     }
-    if (decision === "return" && !comment.trim()) {
-      return setError("Mohon isi komentar/alasan ketika mengembalikan form.");
+    if (tier === 2 && !comment.trim()) {
+      return setError("Komentar / catatan review wajib diisi oleh reviewer Tier 2.");
     }
     setBusy(true);
     setError(null);
     const res = await reviewAction({
       formId,
-      decision,
       comment,
       signature: signature ?? "",
-      ...(decision === "approve" && showTreatments
-        ? { treatments, treatment_other: treatmentOther }
-        : {}),
+      ...(tier === 2 ? { treatments, treatment_other: treatmentOther } : {}),
     });
     setBusy(false);
     if (!res.ok) return setError(res.error ?? "Gagal memproses review.");
@@ -54,33 +46,16 @@ export default function ReviewPanel({
 
   return (
     <div className="card" style={{ border: "2px solid var(--brand)" }}>
-      <div className="card-title">Panel Review — Tier {tier}</div>
+      <div className="card-title">Panel Review — Tahap {tier === 2 ? "Atasan (Tier 2)" : "Managing Director"}</div>
       <div className="alert alert-info">
-        Anda adalah reviewer untuk tahap ini. Periksa form di atas, lalu setujui atau kembalikan ke karyawan.
+        {tier === 2
+          ? "Anda adalah reviewer Tier 2 — periksa hasil penilaian, revisi nilai bila perlu (bagian yang diubah akan ditandai), tetapkan treatment, lalu setujui."
+          : "Anda adalah approver akhir (MD) — periksa hasil dan treatment yang ditetapkan Tier 2, lalu setujui untuk menyelesaikan form."}
       </div>
 
-      <div className="field">
-        <label>Keputusan</label>
-        <div className="row">
-          <label className="checkbox-row" style={{ fontWeight: 400, color: "var(--ink)" }}>
-            <input type="radio" name="decision" checked={decision === "approve"} onChange={() => setDecision("approve")} />
-            Setujui
-          </label>
-          <label className="checkbox-row" style={{ fontWeight: 400, color: "var(--ink)" }}>
-            <input type="radio" name="decision" checked={decision === "return"} onChange={() => setDecision("return")} />
-            Kembalikan ke karyawan
-          </label>
-        </div>
-      </div>
-
-      <div className="field">
-        <label>Komentar / Catatan Review</label>
-        <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} />
-      </div>
-
-      {showTreatments ? (
+      {tier === 2 ? (
         <div className="field">
-          <label>Treatment Berdasarkan Hasil Penilaian (disimpan saat menyetujui)</label>
+          <label>Treatment (berdasarkan hasil penilaian)</label>
           <div className="grid-2" style={{ marginTop: 6 }}>
             {TREATMENTS.map((t) => (
               <label key={t.key} className="checkbox-row" style={{ fontWeight: 400, color: "var(--ink)" }}>
@@ -103,35 +78,40 @@ export default function ReviewPanel({
           )}
         </div>
       ) : (
-        treatments.length > 0 && (
-          <div className="field">
-            <label>Treatment Berdasarkan Hasil Penilaian (diisi oleh Reviewer Tier 2)</label>
-            <ul style={{ margin: 0, paddingLeft: 20 }}>
-              {TREATMENTS.filter((t) => treatments.includes(t.key)).map((t) => (
-                <li key={t.key}>{t.label}</li>
-              ))}
-              {treatments.includes("lain_lain") && treatmentOther && <li>Lain-lain: {treatmentOther}</li>}
-            </ul>
-          </div>
-        )
-      )}
-
-      {decision === "approve" && (
         <div className="field">
-          <label>Tanda Tangan Reviewer</label>
-          <SignaturePad onChange={setSignature} />
+          <label>Treatment (ditetapkan oleh Tier 2)</label>
+          {initialTr.length > 0 ? (
+            <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {initialTr.map((k) => (
+                <span key={k} className="badge badge-review">
+                  {TREATMENTS.find((t) => t.key === k)?.label ?? k}
+                </span>
+              ))}
+              {initialTr.includes("lain_lain") && initialOther && <span className="muted small">{initialOther}</span>}
+            </div>
+          ) : (
+            <span className="muted small">Tidak ada treatment ditetapkan.</span>
+          )}
         </div>
       )}
+
+      <div className="field">
+        <label>
+          Komentar / Catatan Review {tier === 2 ? "* (wajib diisi)" : "(opsional)"}
+        </label>
+        <textarea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} />
+      </div>
+
+      <div className="field">
+        <label>Tanda Tangan Reviewer</label>
+        <SignaturePad onChange={setSignature} signerName={signerName} />
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button
-          className={decision === "approve" ? "btn btn-ok" : "btn btn-danger"}
-          onClick={submit}
-          disabled={busy}
-        >
-          {busy ? "Memproses..." : decision === "approve" ? "Setujui Form" : "Kembalikan Form"}
+        <button className="btn btn-ok" onClick={submit} disabled={busy}>
+          {busy ? "Memproses..." : "Tandatangani & Setujui"}
         </button>
       </div>
     </div>

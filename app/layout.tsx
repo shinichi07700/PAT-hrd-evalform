@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import "./globals.css";
 import { getSessionUser } from "@/lib/session";
 import { logoutAction } from "@/lib/actions";
+import { listSubordinates } from "@/lib/repo";
 
 export const metadata: Metadata = {
   title: "Form Penilaian Karyawan — PAT-F-HRD-13",
@@ -31,7 +32,9 @@ function NavBar({ user }: { user: NonNullable<Awaited<ReturnType<typeof getSessi
         </Link>
         <div className="nav-links">
           <Link href="/">Dashboard</Link>
-          {user.role === "employee" && <Link href="/forms/new">Form Baru</Link>}
+          {user.role === "employee" && listSubordinates(user.id).length > 0 && (
+            <Link href="/forms/new">Nilai Karyawan</Link>
+          )}
           {user.role === "admin" && <Link href="/admin/forms">Kelola Form</Link>}
           {user.role === "admin" && <Link href="/admin/employees">Karyawan</Link>}
         </div>
@@ -48,9 +51,7 @@ function NavBar({ user }: { user: NonNullable<Awaited<ReturnType<typeof getSessi
             redirect("/login");
           }}
         >
-          <button className="btn btn-sm" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.4)" }}>
-            Keluar
-          </button>
+          <button className="btn btn-sm btn-nav">Keluar</button>
         </form>
       </div>
     </nav>

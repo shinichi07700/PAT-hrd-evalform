@@ -50,6 +50,18 @@ export const SCORE_OPTIONS = [
   { value: 1, code: "SK", label: "Sangat Kurang" },
 ] as const;
 
+// Petunjuk pengisian skor — ditampilkan sebelum mulai menilai
+export const SCORING_GUIDE = [
+  { value: 5, label: "Sangat Baik", desc: "Melebihi ekspektasi, menunjukkan keunggulan konsisten" },
+  { value: 4, label: "Baik", desc: "Memenuhi atau sedikit melebihi ekspektasi" },
+  { value: 3, label: "Cukup", desc: "Memenuhi ekspektasi dasar" },
+  { value: 2, label: "Kurang", desc: "Belum memenuhi ekspektasi penuh" },
+  { value: 1, label: "Sangat Kurang", desc: "Jauh di bawah ekspektasi" },
+] as const;
+
+// Nilai di bawah kriteria (K / SK) ditandai merah
+export const isBadScore = (v: number | undefined) => v !== undefined && v <= 2;
+
 // Treatment yang dapat diberikan berdasarkan hasil akhir
 export const TREATMENTS = [
   { key: "promosi", label: "Promosi — kenaikan jabatan yang lebih tinggi dari jabatan sebelumnya" },

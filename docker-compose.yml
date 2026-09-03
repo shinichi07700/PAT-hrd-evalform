@@ -1,0 +1,11 @@
+services:
+  evalformhr:
+    build: .
+    container_name: evalformhr
+    restart: unless-stopped
+    ports:
+      # host:container — the app listens on 3000 inside the container
+      - "5000:3000"
+    volumes:
+      # persistent storage for the SQLite database & app secret
+      - ./data:/app/data

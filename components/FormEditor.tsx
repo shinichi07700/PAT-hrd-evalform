@@ -7,12 +7,14 @@ import {
   ASPECTS_COMMON,
   ASPECTS_MANAGERIAL,
   SCORE_OPTIONS,
+  SCORING_GUIDE,
+  isBadScore,
   FORM_CODE,
   computeTotals,
   gradeFor,
   divisorFor,
 } from "@/lib/scoring";
-import { saveDraftAction, submitFormAction } from "@/lib/actions";
+import { saveDraftAction, saveReviewEditAction, submitFormAction } from "@/lib/actions";
 
 export interface EmployeeInfo {
   name: string;
@@ -34,12 +36,20 @@ export interface FormInitial {
 
 export default function FormEditor({
   formId,
+  employeeId,
   employee,
   initial,
+  signerName,
+  reviewEdit,
+  originalScores,
 }: {
   formId: number | null;
+  employeeId: number;
   employee: EmployeeInfo;
   initial: FormInitial | null;
+  signerName: string;
+  reviewEdit?: boolean;
+  originalScores?: Record<number, number>; // nilai kiriman Tier 1 — untuk menandai revisi Tier 2
 }) {
   const router = useRouter();
   const [periodStart, setPeriodStart] = useState(initial?.period_start ?? "");
@@ -48,11 +58,17 @@ export default function FormEditor({
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [signature, setSignature] = useState<string | null>(initial?.signature ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [savedFlash, setSavedFlash] = useState(false);
   const [busy, setBusy] = useState<"draft" | "submit" | null>(null);
 
   const aspects = employee.is_managerial ? [...ASPECTS_COMMON, ...ASPECTS_MANAGERIAL] : ASPECTS_COMMON;
   const totals = useMemo(() => computeTotals(scores, employee.is_managerial), [scores, employee.is_managerial]);
   const grade = gradeFor(totals.avg);
+
+  // saat Tier 2 mengedit: bandingkan langsung dengan nilai asli Tier 1 → baris yang berubah ditandai
+  const orig = originalScores ?? {};
+  const isEdited = (n: number) =>
+    !!reviewEdit && orig[n] !== undefined && (scores[n] ?? null) !== (orig[n] ?? null);
 
   // group aspects by dimensi (preserve order)
   const groups = useMemo(() => {
@@ -67,6 +83,7 @@ export default function FormEditor({
 
   const inputPayload = () => ({
     formId,
+    employeeId,
     period_start: periodStart,
     period_end: periodEnd,
     scores,
@@ -74,18 +91,27 @@ export default function FormEditor({
   });
 
   const saveDraft = async () => {
+    if (reviewEdit && !notes.trim()) return setError("Catatan tambahan wajib diisi.");
     setBusy("draft");
     setError(null);
-    const res = await saveDraftAction(inputPayload());
+    setSavedFlash(false);
+    const res = reviewEdit ? await saveReviewEditAction(inputPayload()) : await saveDraftAction(inputPayload());
     setBusy(null);
-    if (!res.ok) return setError(res.error ?? "Gagal menyimpan draft.");
+    if (!res.ok) return setError(res.error ?? "Gagal menyimpan.");
+    if (reviewEdit) {
+      // tetap di halaman yang sama (review Tier 2), beri tanda tersimpan
+      setSavedFlash(true);
+      router.refresh();
+      return;
+    }
     router.push(`/forms/${res.formId}`);
     router.refresh();
   };
 
   const submit = async () => {
-    if (!signature) return setError("Silakan buat tanda tangan terlebih dahulu sebelum submit.");
-    if (!confirm("Setelah submit, form akan dikirim ke reviewer dan tidak dapat diubah lagi. Lanjutkan?")) return;
+    if (!notes.trim()) return setError("Catatan tambahan wajib diisi oleh penilai.");
+    if (!signature) return setError("Silakan buat tanda tangan penilai terlebih dahulu sebelum submit.");
+    if (!confirm("Setelah submit, form akan dikirim ke atasan berikutnya untuk direview dan tidak dapat diubah lagi. Lanjutkan?")) return;
     setBusy("submit");
     setError(null);
     const res = await submitFormAction({ ...inputPayload(), signature });
@@ -113,10 +139,10 @@ export default function FormEditor({
           {employee.is_managerial && <span className="badge badge-review">Posisi Managerial — 24 aspek</span>}
         </div>
         <div className="form-head-grid">
-          <span className="muted">Nama</span><span>:</span><b>{employee.name}</b>
-          <span className="muted">Divisi</span><span>:</span><span>{employee.division ?? "-"}</span>
           <span className="muted">No. ID</span><span>:</span><span>{employee.emp_no}</span>
+          <span className="muted">Nama</span><span>:</span><b>{employee.name}</b>
           <span className="muted">Departemen</span><span>:</span><span>{employee.department ?? "-"}</span>
+          <span className="muted">Divisi</span><span>:</span><span>{employee.division ?? "-"}</span>
           <span className="muted">Jabatan</span><span>:</span><span>{employee.position_name ?? "-"}</span>
           <span className="muted">Tgl. Masuk</span><span>:</span><span>{fmtDate(employee.join_date)}</span>
         </div>
@@ -132,11 +158,26 @@ export default function FormEditor({
         </div>
       </div>
 
+      {/* Petunjuk pengisian — baca sebelum mulai menilai */}
+      <div className="card guide-card">
+        <div className="guide-head">PETUNJUK PENGISIAN</div>
+        <div className="guide-body">
+          {SCORING_GUIDE.map((g) => (
+            <div className="guide-row" key={g.value}>
+              <b className="guide-num">{g.value}</b>
+              <span>
+                <b>{g.label}</b> - {g.desc}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Score list */}
       <div className="card">
         <div className="legend-bar">
           {SCORE_OPTIONS.map((o) => (
-            <span key={o.code}>
+            <span key={o.code} className={isBadScore(o.value) ? "bad" : ""}>
               <b>{o.code}</b> = {o.value} {o.label}
             </span>
           ))}
@@ -146,10 +187,13 @@ export default function FormEditor({
           <div key={g.dimensi}>
             <div className="section-label">{g.dimensi}</div>
             {g.aspects.map((a) => (
-              <div className="aspect-row" key={a.no}>
+              <div className={`aspect-row${isEdited(a.no) ? " edited" : ""}`} key={a.no}>
                 <div className="no">{a.no}</div>
                 <div>
-                  <div className="name">{a.name}</div>
+                  <div className="name">
+                    {a.name}
+                    {isEdited(a.no) && <span className="t2-tag">revisi — nilai Tier 1: {orig[a.no]}</span>}
+                  </div>
                   <div className="desc">{a.desc}</div>
                 </div>
                 <div className="score-btns">
@@ -157,14 +201,14 @@ export default function FormEditor({
                     <button
                       type="button"
                       key={o.code}
-                      className={`score-btn ${scores[a.no] === o.value ? "sel" : ""}`}
+                      className={`score-btn ${scores[a.no] === o.value ? "sel" : ""} ${scores[a.no] === o.value && isBadScore(o.value) ? "bad" : ""}`}
                       onClick={() => setScores((s) => ({ ...s, [a.no]: o.value }))}
                     >
                       {o.code}
                     </button>
                   ))}
                 </div>
-                <div className="score-val">{scores[a.no] ?? "–"}</div>
+                <div className={`score-val${isBadScore(scores[a.no]) ? " bad" : ""}`}>{scores[a.no] ?? "–"}</div>
               </div>
             ))}
           </div>
@@ -201,29 +245,43 @@ export default function FormEditor({
         </div>
       </div>
 
+      {/* Treatment tidak diisi oleh penilai Tier 1 — ditetapkan reviewer Tier 2 di panel review */}
+
       {/* Notes */}
       <div className="card">
         <div className="field" style={{ marginBottom: 0 }}>
-          <label>Catatan Tambahan</label>
-          <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <label>Catatan Tambahan *</label>
+          <textarea rows={4} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Wajib diisi — catatan penilai mengenai hasil penilaian ini" />
+          <span className="muted small">Bagian ini wajib diisi sebelum form dapat disubmit / disimpan sebagai revisi.</span>
         </div>
       </div>
 
-      {/* Signature */}
-      <div className="card">
-        <div className="card-title">Tanda Tangan (Yang Dinilai)</div>
-        <SignaturePad initial={initial?.signature} onChange={setSignature} />
-      </div>
+      {/* Signature — tidak perlu tanda tangan ulang saat Tier 2 mengedit */}
+      {!reviewEdit && (
+        <div className="card">
+          <div className="card-title">Tanda Tangan Penilai (Atasan)</div>
+          <SignaturePad initial={initial?.signature} onChange={setSignature} signerName={signerName} />
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
+      {savedFlash && <div className="alert alert-ok">Perubahan tersimpan. Form tetap berstatus menunggu persetujuan Anda.</div>}
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button className="btn" onClick={saveDraft} disabled={busy !== null}>
-          {busy === "draft" ? "Menyimpan..." : "Simpan Draft"}
-        </button>
-        <button className="btn btn-primary" onClick={submit} disabled={busy !== null}>
-          {busy === "submit" ? "Mengirim..." : "Submit & Tanda Tangani"}
-        </button>
+        {reviewEdit ? (
+          <button className="btn btn-primary" onClick={saveDraft} disabled={busy !== null}>
+            {busy === "draft" ? "Menyimpan..." : "Simpan Perubahan Penilaian"}
+          </button>
+        ) : (
+          <>
+            <button className="btn" onClick={saveDraft} disabled={busy !== null}>
+              {busy === "draft" ? "Menyimpan..." : "Simpan Draft"}
+            </button>
+            <button className="btn btn-primary" onClick={submit} disabled={busy !== null}>
+              {busy === "submit" ? "Mengirim..." : "Submit & Tanda Tangani"}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

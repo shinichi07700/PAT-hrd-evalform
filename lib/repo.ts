@@ -1,11 +1,14 @@
 import { db } from "./db";
 
 // Typed query helpers (node:sqlite returns Record<string, SQLOutputValue>)
+// NOTE: rows are spread into plain objects — node:sqlite yields null-prototype
+// objects which React refuses to serialize into Client Components.
 function q1<T>(sql: string, ...params: (number | string | null)[]): T | null {
-  return (db().prepare(sql).get(...params) as unknown as T) ?? null;
+  const row = db().prepare(sql).get(...params);
+  return row ? ({ ...row } as unknown as T) : null;
 }
 function qAll<T>(sql: string, ...params: (number | string | null)[]): T[] {
-  return db().prepare(sql).all(...params) as unknown as T[];
+  return (db().prepare(sql).all(...params) as unknown as T[]).map((r) => ({ ...r }));
 }
 
 // ---------------------------------------------------------------------------
@@ -15,10 +18,10 @@ export interface EmployeeRow {
   id: number;
   emp_no: string;
   name: string;
+  email: string | null;
   position_id: number | null;
   join_date: string | null;
   supervisor_id: number | null;
-  is_top_management: number;
   role: string;
   department: string | null;
   division: string | null;
@@ -28,8 +31,8 @@ export interface EmployeeRow {
 }
 
 const EMPLOYEE_SELECT = `
-  SELECT e.id, e.emp_no, e.name, e.position_id, e.join_date, e.supervisor_id,
-         e.is_top_management, e.role,
+  SELECT e.id, e.emp_no, e.name, e.email, e.position_id, e.join_date, e.supervisor_id,
+         e.role,
          p.department, p.division, p.name AS position_name, p.is_managerial,
          s.name AS supervisor_name
   FROM employees e
@@ -44,8 +47,23 @@ export function getEmployeeByEmpNo(empNo: string): EmployeeRow | null {
   return q1<EmployeeRow>(`${EMPLOYEE_SELECT} WHERE e.emp_no = ?`, empNo);
 }
 
+export function getEmployeeByEmail(email: string): EmployeeRow | null {
+  return q1<EmployeeRow>(`${EMPLOYEE_SELECT} WHERE e.email = ?`, email.trim().toLowerCase());
+}
+
 export function listEmployees(): EmployeeRow[] {
   return qAll<EmployeeRow>(`${EMPLOYEE_SELECT} ORDER BY e.emp_no`);
+}
+
+// Employees in the manager's reporting subtree (who they may evaluate).
+export function listSubordinates(managerId: number): EmployeeRow[] {
+  const ids = descendantEmployeeIds(managerId);
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(",");
+  return qAll<EmployeeRow>(
+    `${EMPLOYEE_SELECT} WHERE e.id IN (${placeholders}) ORDER BY e.name`,
+    ...ids
+  );
 }
 
 export function listPositions() {
@@ -55,33 +73,54 @@ export function listPositions() {
 }
 
 // ---------------------------------------------------------------------------
-// Review chain: direct supervisor -> next supervisor -> top management (MD),
-// max 3 tiers; the final approver is always the top management user.
+// Review chain (evaluator-driven): the Tier 1 evaluator fills & signs the form.
+//   - t2      = the evaluator's own supervisor, but only if it exists and is NOT
+//               the MD (otherwise the MD handles it as the final approver).
+//   - mdFinal = the MD, but only if the evaluator is not the MD themselves.
+// Employee acknowledgment always happens right before the MD signs.
+// The MD is simply the root of the org tree — the employee without an atasan
+// langsung — so no "top management" flag is needed.
 // ---------------------------------------------------------------------------
-export function buildReviewChain(employeeId: number): number[] {
-  const d = db();
-  const supervisorOf = (id: number): number | null =>
-    (d.prepare("SELECT supervisor_id FROM employees WHERE id = ?").get(id) as any)?.supervisor_id ?? null;
+export function getTopManagementId(): number | null {
+  const row = db()
+    .prepare("SELECT id FROM employees WHERE role = 'employee' AND supervisor_id IS NULL ORDER BY id LIMIT 1")
+    .get() as { id: number } | undefined;
+  return row?.id ?? null;
+}
 
-  const top = (d.prepare("SELECT id FROM employees WHERE is_top_management = 1 ORDER BY id LIMIT 1").get() as any)?.id as
-    | number
-    | undefined;
+export function resolveChain(
+  evaluatorId: number | null
+): { t2: number | null; mdFinal: number | null } {
+  const md = getTopManagementId();
+  if (!evaluatorId) return { t2: null, mdFinal: md };
+  const sup = (db().prepare("SELECT supervisor_id FROM employees WHERE id = ?").get(evaluatorId) as any)
+    ?.supervisor_id as number | null;
+  const t2 = sup && sup !== evaluatorId && sup !== md ? sup : null;
+  const mdFinal = evaluatorId !== md ? md : null;
+  return { t2, mdFinal };
+}
 
-  const chain: number[] = [];
-  const seen = new Set<number>([employeeId]);
-  let cur = supervisorOf(employeeId);
-  while (cur && !seen.has(cur)) {
-    seen.add(cur);
-    chain.push(cur);
-    if (cur === top) break;
-    cur = supervisorOf(cur);
-  }
-  // last tier must be top management
-  if (top && !seen.has(top)) {
-    if (chain.length >= 3) chain[2] = top;
-    else chain.push(top);
-  }
-  return chain.slice(0, 3);
+// All direct + indirect reports of a manager (reporting subtree). Depth-capped to
+// avoid infinite recursion on accidental supervisor cycles.
+export function descendantEmployeeIds(managerId: number): number[] {
+  const rows = qAll<{ id: number }>(
+    `WITH RECURSIVE sub(id, depth) AS (
+       SELECT id, 1 FROM employees WHERE supervisor_id = ? AND id <> ?
+       UNION ALL
+       SELECT e.id, s.depth + 1 FROM employees e
+       JOIN sub s ON e.supervisor_id = s.id
+       WHERE s.depth < 20 AND e.id <> ?
+     )
+     SELECT DISTINCT id FROM sub`,
+    managerId,
+    managerId,
+    managerId
+  );
+  return rows.map((r) => r.id);
+}
+
+export function isDescendant(managerId: number, employeeId: number): boolean {
+  return descendantEmployeeIds(managerId).includes(employeeId);
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +129,7 @@ export function buildReviewChain(employeeId: number): number[] {
 export interface FormRow {
   id: number;
   employee_id: number;
+  evaluator_id: number | null;
   period_start: string;
   period_end: string;
   status: string;
@@ -98,14 +138,20 @@ export interface FormRow {
   reviewer3_id: number | null;
   employee_signature: string | null;
   employee_signed_at: string | null;
+  ack_signature: string | null;
+  ack_at: string | null;
   treatment_other: string | null;
   notes: string | null;
+  original_scores?: string | null; // JSON snapshot nilai kiriman Tier 1
+  tier2_edits?: string | null; // JSON array of aspect_no changed by Tier 2
   created_at: string;
   submitted_at: string | null;
   completed_at: string | null;
   // joined
   emp_no?: string;
   employee_name?: string;
+  evaluator_name?: string | null;
+  evaluator_emp_no?: string | null;
   department?: string | null;
   division?: string | null;
   position_name?: string | null;
@@ -118,7 +164,7 @@ export interface ReviewRow {
   form_id: number;
   tier: number;
   reviewer_id: number;
-  action: "approved" | "returned";
+  action: "approved" | "returned" | "acknowledged";
   comment: string | null;
   signature: string | null;
   acted_at: string;
@@ -130,9 +176,11 @@ export interface ReviewRow {
 export function getForm(id: number): FormRow | null {
   return q1<FormRow>(
     `SELECT f.*, e.emp_no, e.name AS employee_name, e.join_date,
+            ev.name AS evaluator_name, ev.emp_no AS evaluator_emp_no,
             p.department, p.division, p.name AS position_name, p.is_managerial
      FROM forms f
      JOIN employees e ON e.id = f.employee_id
+     LEFT JOIN employees ev ON ev.id = f.evaluator_id
      LEFT JOIN positions p ON p.id = e.position_id
      WHERE f.id = ?`,
     id
@@ -207,16 +255,55 @@ export function formsForEmployee(employeeId: number): FormRow[] {
 export function pendingReviewsFor(reviewerId: number): FormRow[] {
   return qAll<FormRow>(
     `SELECT f.*, e.emp_no, e.name AS employee_name, e.join_date,
+            ev.name AS evaluator_name, ev.emp_no AS evaluator_emp_no,
             p.department, p.division, p.name AS position_name, p.is_managerial
      FROM forms f JOIN employees e ON e.id = f.employee_id
+     LEFT JOIN employees ev ON ev.id = f.evaluator_id
      LEFT JOIN positions p ON p.id = e.position_id
-     WHERE ((f.status = 'review1' AND f.reviewer1_id = ?)
-        OR  (f.status = 'review2' AND f.reviewer2_id = ?)
+     WHERE ((f.status = 'review2' AND f.reviewer2_id = ?)
         OR  (f.status = 'review3' AND f.reviewer3_id = ?))
      ORDER BY f.submitted_at`,
     reviewerId,
-    reviewerId,
     reviewerId
+  );
+}
+
+// Forms of everyone in the manager's reporting subtree (direct + indirect reports).
+export function teamFormsFor(managerId: number): FormRow[] {
+  return qAll<FormRow>(
+    `WITH RECURSIVE sub(id, depth) AS (
+       SELECT id, 1 FROM employees WHERE supervisor_id = ? AND id <> ?
+       UNION ALL
+       SELECT e.id, s.depth + 1 FROM employees e
+       JOIN sub s ON e.supervisor_id = s.id
+       WHERE s.depth < 20 AND e.id <> ?
+     )
+     SELECT f.*, e.emp_no, e.name AS employee_name, e.join_date,
+            ev.name AS evaluator_name, ev.emp_no AS evaluator_emp_no,
+            p.department, p.division, p.name AS position_name, p.is_managerial
+     FROM forms f JOIN employees e ON e.id = f.employee_id
+     LEFT JOIN employees ev ON ev.id = f.evaluator_id
+     LEFT JOIN positions p ON p.id = e.position_id
+     WHERE f.employee_id IN (SELECT id FROM sub)
+     ORDER BY f.created_at DESC`,
+    managerId,
+    managerId,
+    managerId
+  );
+}
+
+// Draft forms the evaluator has started but not yet submitted.
+export function draftsByEvaluator(evaluatorId: number): FormRow[] {
+  return qAll<FormRow>(
+    `SELECT f.*, e.emp_no, e.name AS employee_name, e.join_date,
+            ev.name AS evaluator_name, ev.emp_no AS evaluator_emp_no,
+            p.department, p.division, p.name AS position_name, p.is_managerial
+     FROM forms f JOIN employees e ON e.id = f.employee_id
+     LEFT JOIN employees ev ON ev.id = f.evaluator_id
+     LEFT JOIN positions p ON p.id = e.position_id
+     WHERE f.evaluator_id = ? AND f.status = 'draft'
+     ORDER BY f.created_at DESC`,
+    evaluatorId
   );
 }
 
@@ -245,7 +332,8 @@ export const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
   review1: "Review Tier 1",
   review2: "Review Tier 2",
-  review3: "Review Tier 3",
+  review3: "Review Top Management",
+  awaiting_ack: "Menunggu Konfirmasi Karyawan",
   completed: "Completed",
   returned: "Returned",
 };

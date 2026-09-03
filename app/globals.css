@@ -85,10 +85,18 @@ h3 { font-size: 14px; margin: 16px 0 8px; }
 .btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
 .btn-ok:hover { background: var(--brand-2); }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-back { border: none; background: transparent; color: var(--muted); font-weight: 600; padding-left: 0; }
+.btn-back:hover { background: transparent; color: var(--brand); }
+.btn-close { color: var(--muted); }
+.btn-close:hover { color: var(--danger); border-color: #fecaca; background: var(--danger-bg); }
+.btn-nav { background: transparent; border-color: rgba(255,255,255,0.45); color: #fff; }
+.btn-nav:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.7); }
+.link { color: var(--brand-2); font-weight: 600; font-size: inherit; text-decoration: none; }
+.link:hover { text-decoration: underline; }
 
 /* Forms */
 label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-input[type="text"], input[type="password"], input[type="date"], select, textarea {
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select, textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -141,6 +149,11 @@ table.data tr:hover td { background: #f8fafc; }
   background: var(--brand);
   color: #fff;
   padding: 0 20px;
+  /* selalu terlihat — menu & Keluar tidak ikut ter-scroll */
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(15, 42, 32, 0.18);
 }
 .nav-inner {
   max-width: 1280px;
@@ -165,8 +178,90 @@ table.data tr:hover td { background: #f8fafc; }
 .nav-user b { font-size: 13px; }
 
 /* Login */
-.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--brand); }
-.login-card { width: 380px; background: #fff; border-radius: 14px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.login-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1100px 600px at 12% -10%, rgba(255,255,255,0.10), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(255,255,255,0.08), transparent 55%),
+    linear-gradient(140deg, #14532d 0%, #166534 45%, #1b7a43 100%);
+}
+.login-shell { width: 100%; max-width: 400px; }
+.login-brand {
+  width: 60px; height: 60px;
+  margin: 0 auto 18px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 22px; letter-spacing: 0.5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  backdrop-filter: blur(4px);
+}
+.login-card {
+  width: 100%;
+  background: #fff;
+  border-radius: 18px;
+  padding: 32px 30px 28px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.35);
+}
+.login-head { text-align: center; margin-bottom: 26px; }
+.login-title { font-size: 20px; font-weight: 800; color: var(--brand); letter-spacing: -0.2px; }
+.login-sub { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+.login-wrap .field { margin-bottom: 16px; }
+.login-wrap label { font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 6px; }
+.login-wrap input[type="email"],
+.login-wrap input[type="password"] {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-size: 15px;
+  font-family: inherit;
+  background: #fbfcfe;
+  color: var(--ink);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.login-wrap input[type="email"]:focus,
+.login-wrap input[type="password"]:focus {
+  outline: none;
+  background: #fff;
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px rgba(22,101,52,0.15);
+}
+.btn-login {
+  display: block;
+  text-align: center;
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(180deg, var(--brand-2), var(--brand));
+  box-shadow: 0 8px 20px rgba(20,83,45,0.35);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, filter 0.12s;
+}
+.btn-login:hover { filter: brightness(1.06); box-shadow: 0 10px 26px rgba(20,83,45,0.42); }
+.btn-login:active { transform: translateY(1px); }
+.btn-login:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+.login-hint {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--accent);
+  border: 1px solid #dcfce7;
+  border-radius: 10px;
+  color: #3f6212;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.login-foot { text-align: center; color: rgba(255,255,255,0.7); font-size: 11.5px; margin-top: 22px; }
 
 /* Score list (mulerun-style card layout) */
 .legend-bar {
@@ -226,6 +321,68 @@ table.data tr:hover td { background: #f8fafc; }
 .score-btn.sel { background: var(--brand); border-color: var(--brand); color: #fff; }
 .score-val { font-weight: 700; text-align: right; font-size: 14px; }
 
+/* Nilai K / SK (di bawah kriteria) ditandai merah */
+.score-btn.sel.bad { background: #dc2626; border-color: #dc2626; color: #fff; }
+.score-val.bad { color: #dc2626; }
+.legend-bar span.bad { color: #dc2626; }
+
+/* Petunjuk pengisian — sesuai template formulir */
+.guide-card { padding: 0; overflow: hidden; }
+.guide-head {
+  background: #2b4c6e;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 9px 16px;
+  font-size: 14px;
+}
+.guide-body { background: #fbf7cf; padding: 6px 0; }
+.guide-row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 16px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.guide-num { text-align: center; font-size: 15px; }
+@media print {
+  .guide-head, .guide-body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .score-btn.sel.bad { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* Revisi Tier 2 — nilai yang diubah reviewer Tier 2 ditandai oranye */
+.aspect-row.edited {
+  background: #fff8ec;
+  box-shadow: inset 3px 0 0 #d97706;
+  border-radius: 0 8px 8px 0;
+}
+.aspect-row.edited .score-val { color: #b45309; }
+.aspect-row.edited .score-val.bad { color: #dc2626; }
+.t2-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #b45309;
+  background: #fdeccd;
+  border: 1px solid #f0c98a;
+  border-radius: 999px;
+  vertical-align: middle;
+  white-space: normal;
+}
+.t2-legend {
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #b45309;
+}
+@media print {
+  .aspect-row.edited, .t2-tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
 .total-row {
   display: flex;
   justify-content: space-between;
@@ -274,6 +431,62 @@ table.scores tr.total td { background: #f8fafc; font-weight: 700; }
 .sig-box { max-width: 420px; }
 .sig-img { max-height: 100px; }
 
+/* Signature mode tabs & typed (digital) signature */
+.sig-tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.sig-tabs button { border: none; background: #fff; padding: 6px 18px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; font-family: inherit; }
+.sig-tabs button.on { background: var(--brand); color: #fff; }
+.sig-type-area { max-width: 460px; }
+.sig-typed-preview {
+  min-height: 88px; display: flex; align-items: flex-end; justify-content: center; padding: 10px 12px 8px;
+  border: 1.5px dashed var(--line); border-bottom: 1.5px solid var(--line); border-radius: 8px 8px 0 0;
+}
+.sig-typed-preview.on { border-style: solid; border-color: var(--line); border-bottom-color: var(--brand); background: linear-gradient(180deg, #fff 60%, var(--accent)); }
+.sig-typed {
+  font-family: "Segoe Script", "Brush Script MT", "Snell Roundhand", cursive;
+  font-size: 28px; font-style: italic; color: #16324f; line-height: 1.15;
+  transform: rotate(-1.5deg); display: inline-block;
+}
+
+/* Signature approval panel (FormView) — executive style */
+.sig-panel { border-top: 3px solid var(--brand); }
+.sig-panel-head {
+  display: flex; align-items: center; gap: 14px;
+  margin: 2px 0 18px; color: var(--muted);
+}
+.sig-panel-head::before, .sig-panel-head::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.sig-panel-head span {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; white-space: nowrap;
+}
+.sig-panel-grid { display: grid; }
+.sig-cell { text-align: center; padding: 6px 14px 10px; position: relative; }
+.sig-cell + .sig-cell::before {
+  content: ""; position: absolute; left: 0; top: 16%; height: 68%; border-left: 1px solid var(--line);
+}
+.sig-doc {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink);
+}
+.sig-role { font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+.sig-ink {
+  height: 104px; display: flex; align-items: center; justify-content: center;
+  margin: 12px auto 10px;
+}
+.sig-ink img { max-height: 96px; max-width: 90%; filter: grayscale(35%) contrast(1.08); }
+.sig-empty-note {
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #9aa7b4;
+  border: 1px dashed #c3ccd6; border-radius: 999px; padding: 8px 14px;
+}
+.sig-name {
+  font-weight: 700; font-size: 13.5px; color: var(--ink);
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px;
+  display: inline-block;
+}
+.sig-date { font-size: 11px; color: var(--muted); margin-top: 7px; }
+.sig-verified {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 8px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--brand-2); background: var(--accent); border: 1px solid #bbe7cb; border-radius: 999px; padding: 2px 10px;
+}
+
 /* Status steps */
 .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .step {
@@ -299,5 +512,6 @@ table.scores tr.total td { background: #f8fafc; font-weight: 700; }
   body { background: #fff; }
   .container, .container-wide { max-width: none; padding: 0; }
   .card { border: none; padding: 0; margin: 0; }
+  .sig-panel { border-top: 3px solid var(--brand) !important; }
   .print-block { page-break-inside: avoid; }
 }

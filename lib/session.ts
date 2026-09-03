@@ -8,8 +8,8 @@ export interface SessionUser {
   id: number;
   emp_no: string;
   name: string;
+  email: string | null;
   role: "employee" | "admin";
-  is_top_management: number;
   supervisor_id: number | null;
   position_name: string | null;
 }
@@ -24,7 +24,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!uid || !exp || Date.now() > Number(exp)) return null;
   const row = db()
     .prepare(
-      `SELECT e.id, e.emp_no, e.name, e.role, e.is_top_management, e.supervisor_id, p.name AS position_name
+      `SELECT e.id, e.emp_no, e.name, e.email, e.role, e.supervisor_id, p.name AS position_name
        FROM employees e LEFT JOIN positions p ON p.id = e.position_id
        WHERE e.id = ?`
     )

@@ -144,6 +144,7 @@ function init(conn: DatabaseSync) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       emp_no TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
+      email TEXT,
       position_id INTEGER REFERENCES positions(id),
       join_date TEXT,
       supervisor_id INTEGER REFERENCES employees(id),
@@ -156,6 +157,7 @@ function init(conn: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS forms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       employee_id INTEGER NOT NULL REFERENCES employees(id),
+      evaluator_id INTEGER REFERENCES employees(id),
       period_start TEXT NOT NULL,
       period_end TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'draft',
@@ -164,6 +166,8 @@ function init(conn: DatabaseSync) {
       reviewer3_id INTEGER REFERENCES employees(id),
       employee_signature TEXT,
       employee_signed_at TEXT,
+      ack_signature TEXT,
+      ack_at TEXT,
       treatment_other TEXT,
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -195,6 +199,24 @@ function init(conn: DatabaseSync) {
       acted_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // migration for existing databases (employee acknowledgment columns)
+  const cols = conn.prepare("PRAGMA table_info(forms)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "ack_signature")) conn.exec("ALTER TABLE forms ADD COLUMN ack_signature TEXT");
+  if (!cols.some((c) => c.name === "ack_at")) conn.exec("ALTER TABLE forms ADD COLUMN ack_at TEXT");
+  // evaluator_id: the supervisor who fills & signs the form (employee_id is the person assessed)
+  if (!cols.some((c) => c.name === "evaluator_id")) conn.exec("ALTER TABLE forms ADD COLUMN evaluator_id INTEGER REFERENCES employees(id)");
+  // snapshot of Tier 1 scores + list of aspects later edited by Tier 2 (for color-marking)
+  if (!cols.some((c) => c.name === "original_scores")) conn.exec("ALTER TABLE forms ADD COLUMN original_scores TEXT");
+  if (!cols.some((c) => c.name === "tier2_edits")) conn.exec("ALTER TABLE forms ADD COLUMN tier2_edits TEXT");
+
+  // migration: employees.email (login identifier). Enforced unique via partial
+  // index so blank/NULL rows can coexist during backfill while real emails stay unique.
+  const empCols = conn.prepare("PRAGMA table_info(employees)").all() as { name: string }[];
+  if (!empCols.some((c) => c.name === "email")) conn.exec("ALTER TABLE employees ADD COLUMN email TEXT");
+  conn.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_email ON employees(email) WHERE email IS NOT NULL AND email <> ''"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -210,27 +232,27 @@ function seed(conn: DatabaseSync) {
     (conn.prepare("SELECT id FROM positions WHERE name = ? LIMIT 1").get(name) as any)?.id ?? null;
 
   const insEmp = conn.prepare(`
-    INSERT INTO employees (emp_no, name, position_id, join_date, supervisor_id, is_top_management, password_hash, role)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO employees (emp_no, name, email, position_id, join_date, supervisor_id, is_top_management, password_hash, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Admin (HR) account
-  insEmp.run("ADMIN", "HR Administrator", null, null, null, 0, hashPassword("admin123"), "admin");
+  insEmp.run("ADMIN", "HR Administrator", "admin@primaagrotech.com", null, null, null, 0, hashPassword("admin123"), "admin");
 
   // Top Management — Managing Director (final approver of every form)
-  const md = insEmp.run("MD-001", "Managing Director", null, "2015-01-05", null, 1, hashPassword("md123"), "employee");
+  const md = insEmp.run("MD-001", "Managing Director", "md@primaagrotech.com", null, "2015-01-05", null, 1, hashPassword("md123"), "employee");
 
   // Demo chain: Production Team -> Production Team Leader -> Operations Manager -> MD
   const mgr = insEmp.run(
-    "EMP-101", "Budi Santoso", posId("Operations Manager"), "2018-03-12",
+    "EMP-101", "Budi Santoso", "emp101@primaagrotech.com", posId("Operations Manager"), "2018-03-12",
     Number(md.lastInsertRowid), 0, hashPassword("EMP-101"), "employee"
   );
   const leader = insEmp.run(
-    "EMP-102", "Siti Rahayu", posId("Production Team Leader"), "2020-07-01",
+    "EMP-102", "Siti Rahayu", "emp102@primaagrotech.com", posId("Production Team Leader"), "2020-07-01",
     Number(mgr.lastInsertRowid), 0, hashPassword("EMP-102"), "employee"
   );
   insEmp.run(
-    "EMP-103", "Andi Wijaya", posId("Production Team"), "2022-11-20",
+    "EMP-103", "Andi Wijaya", "emp103@primaagrotech.com", posId("Production Team"), "2022-11-20",
     Number(leader.lastInsertRowid), 0, hashPassword("EMP-103"), "employee"
   );
 }

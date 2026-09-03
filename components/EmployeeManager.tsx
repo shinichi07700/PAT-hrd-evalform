@@ -8,10 +8,10 @@ export interface EmployeeLite {
   id: number;
   emp_no: string;
   name: string;
+  email: string | null;
   position_id: number | null;
   join_date: string | null;
   supervisor_id: number | null;
-  is_top_management: boolean;
   department: string | null;
   division: string | null;
   position_name: string | null;
@@ -32,10 +32,10 @@ const emptyForm = {
   id: null as number | null,
   emp_no: "",
   name: "",
+  email: "",
   position_id: null as number | null,
   join_date: "",
   supervisor_id: null as number | null,
-  is_top_management: false,
   new_password: "",
 };
 
@@ -64,10 +64,10 @@ export default function EmployeeManager({
       id: e.id,
       emp_no: e.emp_no,
       name: e.name,
+      email: e.email ?? "",
       position_id: e.position_id,
       join_date: e.join_date ?? "",
       supervisor_id: e.supervisor_id,
-      is_top_management: e.is_top_management,
       new_password: "",
     });
     setEditing(true);
@@ -96,6 +96,7 @@ export default function EmployeeManager({
       !filter ||
       e.name.toLowerCase().includes(filter.toLowerCase()) ||
       e.emp_no.toLowerCase().includes(filter.toLowerCase()) ||
+      (e.email ?? "").toLowerCase().includes(filter.toLowerCase()) ||
       (e.position_name ?? "").toLowerCase().includes(filter.toLowerCase())
   );
 
@@ -117,7 +118,7 @@ export default function EmployeeManager({
       {editing && (
         <div className="card" style={{ border: "2px solid var(--brand)" }}>
           <div className="card-title">{form.id ? "Edit Karyawan" : "Tambah Karyawan"}</div>
-          <div className="grid-3">
+          <div className="grid-2">
             <div className="field">
               <label>No. ID *</label>
               <input type="text" value={form.emp_no} onChange={(e) => set({ emp_no: e.target.value })} />
@@ -125,6 +126,12 @@ export default function EmployeeManager({
             <div className="field">
               <label>Nama Lengkap *</label>
               <input type="text" value={form.name} onChange={(e) => set({ name: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid-2">
+            <div className="field">
+              <label>Email * (untuk login)</label>
+              <input type="email" value={form.email} onChange={(e) => set({ email: e.target.value })} placeholder="nama@primaagrotech.com" />
             </div>
             <div className="field">
               <label>Tanggal Masuk</label>
@@ -157,21 +164,13 @@ export default function EmployeeManager({
                   .filter((e) => e.id !== form.id)
                   .map((e) => (
                     <option key={e.id} value={e.id}>
-                      {e.name} ({e.emp_no}){e.is_top_management ? " — Top Management" : ""}
+                      {e.name} ({e.emp_no})
                     </option>
                   ))}
               </select>
             </div>
           </div>
           <div className="grid-2">
-            <label className="checkbox-row" style={{ fontWeight: 400, color: "var(--ink)" }}>
-              <input
-                type="checkbox"
-                checked={form.is_top_management}
-                onChange={(e) => set({ is_top_management: e.target.checked })}
-              />
-              Top Management (approver terakhir setiap form)
-            </label>
             <div className="field">
               <label>{form.id ? "Password Baru (kosongkan jika tidak diubah)" : "Password (default = No. ID)"}</label>
               <input type="text" value={form.new_password} onChange={(e) => set({ new_password: e.target.value })} />
@@ -193,6 +192,7 @@ export default function EmployeeManager({
             <tr>
               <th>No. ID</th>
               <th>Nama</th>
+              <th>Email</th>
               <th>Jabatan</th>
               <th>Atasan</th>
               <th>Masuk</th>
@@ -206,9 +206,10 @@ export default function EmployeeManager({
                 <td>
                   <b>{e.name}</b>
                   <div className="muted small">
-                    {e.role === "admin" ? "Admin HR" : e.is_top_management ? "Top Management" : e.is_managerial ? "Managerial" : "Non-Managerial"}
+                    {e.role === "admin" ? "Admin HR" : e.supervisor_id === null ? "Approver Akhir (MD)" : e.is_managerial ? "Managerial" : "Non-Managerial"}
                   </div>
                 </td>
+                <td className="small">{e.email ?? <span className="muted">—</span>}</td>
                 <td>
                   {e.position_name ?? "-"}
                   <div className="muted small">
@@ -225,7 +226,7 @@ export default function EmployeeManager({
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted center">Tidak ada karyawan.</td>
+                <td colSpan={7} className="muted center">Tidak ada karyawan.</td>
               </tr>
             )}
           </tbody>

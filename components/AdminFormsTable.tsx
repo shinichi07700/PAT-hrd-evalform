@@ -22,10 +22,11 @@ interface AdminForm {
 const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
   review1: "Review Tier 1",
-  review2: "Review Tier 2",
-  review3: "Review Tier 3",
+  review2: "Review Tier 2 (Atasan)",
+  review3: "Review Top Management",
+  awaiting_ack: "Menunggu Konfirmasi Karyawan",
   completed: "Completed",
-  returned: "Returned",
+  returned: "Ditolak — perlu tindak lanjut HR",
 };
 
 function statusCls(s: string) {
@@ -52,7 +53,7 @@ export default function AdminFormsTable({
   const [statusFilter, setStatusFilter] = useState("all");
   const [q, setQ] = useState("");
   const [editRow, setEditRow] = useState<number | null>(null);
-  const [chain, setChain] = useState<[number | null, number | null, number | null]>([null, null, null]);
+  const [chain, setChain] = useState<[number | null, number | null]>([null, null]);
   const [error, setError] = useState<string | null>(null);
 
   const filtered = forms.filter(
@@ -65,12 +66,12 @@ export default function AdminFormsTable({
 
   const openEdit = (f: AdminForm) => {
     setEditRow(f.id);
-    setChain([f.reviewer1_id, f.reviewer2_id, f.reviewer3_id]);
+    setChain([f.reviewer2_id, f.reviewer3_id]);
     setError(null);
   };
 
   const saveChain = async (formId: number) => {
-    const res = await setFormReviewersAction(formId, chain[0], chain[1], chain[2]);
+    const res = await setFormReviewersAction(formId, chain[0], chain[1]);
     if (!res.ok) return setError(res.error ?? "Gagal menyimpan.");
     setEditRow(null);
     router.refresh();
@@ -84,7 +85,7 @@ export default function AdminFormsTable({
   };
 
   const reset = async (f: AdminForm) => {
-    if (!confirm(`Kembalikan form #${f.id} ke status Draft? Karyawan dapat mengisinya ulang.`)) return;
+    if (!confirm(`Kembalikan form #${f.id} ke status Draft? Penilai (atasan) dapat mengisi ulang form.`)) return;
     const res = await resetFormAction(f.id);
     if (!res.ok) return alert(res.error);
     router.refresh();
@@ -147,10 +148,10 @@ export default function AdminFormsTable({
                 {editRow === f.id && (
                   <tr>
                     <td colSpan={5} style={{ background: "#f8fafc" }}>
-                      <div className="grid-3" style={{ marginBottom: 8 }}>
-                        {[0, 1, 2].map((i) => (
+                      <div className="grid-2" style={{ marginBottom: 8 }}>
+                        {[0, 1].map((i) => (
                           <div key={i}>
-                            <label>Reviewer Tier {i + 1}</label>
+                            <label>{i === 0 ? "Reviewer Tier 2 (Atasan Penilai)" : "Approver Akhir (Managing Director)"}</label>
                             <select
                               value={chain[i] ?? ""}
                               onChange={(e) =>
@@ -171,7 +172,7 @@ export default function AdminFormsTable({
                       </div>
                       <div className="row" style={{ justifyContent: "flex-end" }}>
                         <button className="btn btn-sm" onClick={() => setEditRow(null)}>Batal</button>
-                        <button className="btn btn-sm btn-primary" onClick={() => saveChain(f.id)}>Simpan Rantai Review</button>
+                        <button className="btn btn-sm btn-primary" onClick={() => saveChain(f.id)}>Simpan Route Persetujuan</button>
                       </div>
                     </td>
                   </tr>

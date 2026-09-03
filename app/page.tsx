@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { formsForEmployee, pendingReviewsFor, allForms } from "@/lib/repo";
+import {
+  formsForEmployee,
+  pendingReviewsFor,
+  draftsByEvaluator,
+  teamFormsFor,
+  listSubordinates,
+  allForms,
+} from "@/lib/repo";
 import { db } from "@/lib/db";
 import { FormsTable } from "@/components/FormsTable";
 
@@ -14,7 +21,7 @@ export default async function DashboardPage() {
   if (user.role === "admin") {
     const forms = allForms();
     const empCount = (db().prepare("SELECT COUNT(*) AS c FROM employees WHERE role = 'employee'").get() as any).c;
-    const pending = forms.filter((f) => f.status.startsWith("review")).length;
+    const pending = forms.filter((f) => f.status.startsWith("review") || f.status === "awaiting_ack").length;
     const completed = forms.filter((f) => f.status === "completed").length;
     return (
       <div className="container-wide">
@@ -49,8 +56,12 @@ export default async function DashboardPage() {
     );
   }
 
-  const myForms = formsForEmployee(user.id);
-  const pending = pendingReviewsFor(user.id);
+  const myForms = formsForEmployee(user.id);          // form di mana saya yang dinilai
+  const pending = pendingReviewsFor(user.id);          // menunggu persetujuan saya sebagai atasan/MD
+  const toAcknowledge = myForms.filter((f) => f.status === "awaiting_ack");
+  const subordinates = listSubordinates(user.id);      // bawahan langsung & tidak langsung
+  const myDrafts = draftsByEvaluator(user.id);         // penilaian yang saya buat, belum di-submit
+  const teamForms = subordinates.length > 0 ? teamFormsFor(user.id) : [];
 
   return (
     <div className="container">
@@ -59,6 +70,25 @@ export default async function DashboardPage() {
         <p className="muted" style={{ marginTop: -8 }}>
           {user.position_name} · {user.emp_no}
         </p>
+      )}
+
+      {subordinates.length > 0 && (
+        <div className="card">
+          <div className="card-title">
+            <span>Nilai Karyawan Bawahan</span>
+            <Link href="/forms/new" className="btn btn-primary">+ Buat Penilaian Baru</Link>
+          </div>
+          <div className="alert alert-info">
+            Anda dapat menilai {subordinates.length} karyawan pada lini laporan Anda. Form baru otomatis mengikuti
+            alur: Anda (Tier 1) → atasan Anda (Tier 2, bila ada) → konfirmasi karyawan → persetujuan Managing Director.
+          </div>
+          {myDrafts.length > 0 && (
+            <>
+              <div className="section-label">Draft Anda (belum di-submit)</div>
+              <FormsTable forms={myDrafts} />
+            </>
+          )}
+        </div>
       )}
 
       {pending.length > 0 && (
@@ -73,12 +103,32 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {teamForms.length > 0 && (
+        <div className="card">
+          <div className="card-title">
+            <span>Form Tim / Departemen Saya ({teamForms.length})</span>
+          </div>
+          <FormsTable forms={teamForms} filterable />
+        </div>
+      )}
+
+      {toAcknowledge.length > 0 && (
+        <div className="card">
+          <div className="card-title">
+            <span>Menunggu Konfirmasi Anda ({toAcknowledge.length})</span>
+          </div>
+          <div className="alert alert-ok">
+            Penilaian Anda oleh atasan telah selesai. Buka form untuk melihat hasil dan tanda tangan konfirmasi.
+          </div>
+          <FormsTable forms={toAcknowledge} showEmployee={false} />
+        </div>
+      )}
+
       <div className="card">
         <div className="card-title">
           <span>Form Penilaian Saya</span>
-          <Link href="/forms/new" className="btn btn-primary">+ Buat Form Baru</Link>
         </div>
-        <FormsTable forms={myForms} showEmployee={false} />
+        <FormsTable forms={myForms} showEmployee={false} filterable />
       </div>
     </div>
   );
