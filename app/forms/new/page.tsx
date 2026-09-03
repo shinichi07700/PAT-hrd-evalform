@@ -69,7 +69,6 @@ export default async function NewFormPage({
       <div className="container">
         <div className="row no-print" style={{ gap: 6, alignItems: "center" }}>
           <BackButton />
-          <CloseButton />
         </div>
         <h1>Nilai Karyawan</h1>
         <p className="muted">Daftar ini adalah karyawan yang Tier‑1-nya Anda (sesuai data karyawan).</p>
