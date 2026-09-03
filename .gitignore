@@ -3,6 +3,7 @@ node_modules/
 out/
 data/
 _scratch/
+backups/
 *.tsbuildinfo
 next-env.d.ts.bak
 form4-review-tier2.png

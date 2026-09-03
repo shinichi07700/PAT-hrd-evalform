@@ -6,6 +6,8 @@
     "dev": "next dev --port 5000",
     "build": "next build",
     "start": "next start",
+    "import:employees": "node scripts/import_employees.mjs",
+    "backup": "node scripts/backup_db.mjs",
     "import:emails": "node scripts/import_emails.mjs"
   },
   "engines": {

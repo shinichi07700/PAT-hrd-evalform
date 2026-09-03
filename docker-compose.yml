@@ -9,3 +9,5 @@ services:
     volumes:
       # persistent storage for the SQLite database & app secret
       - ./data:/app/data
+      # consistent snapshots written by scripts/backup_db.mjs (kept out of git)
+      - ./backups:/app/backups

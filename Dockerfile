@@ -19,6 +19,9 @@ RUN mkdir -p data
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+# Maintenance scripts (employee import from the Google Sheet, DB backup) so they
+# can be run on the server with:  docker compose exec evalformhr node scripts/...
+COPY --from=builder /app/scripts ./scripts
 
 EXPOSE 3000
 CMD ["node", "server.js"]
