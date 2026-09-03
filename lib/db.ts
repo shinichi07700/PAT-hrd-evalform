@@ -66,9 +66,33 @@ const POSITION_TEMPLATE: [string, string, string, 0 | 1][] = [
 // ---------------------------------------------------------------------------
 // Connection (singleton per process)
 // ---------------------------------------------------------------------------
-const DATA_DIR = path.join(process.cwd(), "data");
+// Data folder can be moved OFF Google Drive for faster local dev writes, e.g.:
+//   $env:DB_DIR = "C:\dev\evalform-data"  (copy data/evalform.db there first)
+const DATA_DIR = process.env.DB_DIR ? path.resolve(process.env.DB_DIR) : path.join(process.cwd(), "data");
 
 let _db: DatabaseSync | null = null;
+
+// Wrap multi-statement writes in ONE transaction: a single WAL flush instead of
+// one per statement. Matters a lot when the DB file sits on a synced drive
+// (Google Drive) — measured ~10x faster for a form save there.
+// Re-entrant: nested tx() calls just run inline within the outer transaction.
+let _txDepth = 0;
+export function tx<T>(fn: () => T): T {
+  if (_txDepth > 0) return fn();
+  const d = db();
+  d.exec("BEGIN");
+  _txDepth++;
+  try {
+    const r = fn();
+    d.exec("COMMIT");
+    return r;
+  } catch (e) {
+    try { d.exec("ROLLBACK"); } catch { /* ignore */ }
+    throw e;
+  } finally {
+    _txDepth--;
+  }
+}
 
 export function db(): DatabaseSync {
   if (_db) return _db;

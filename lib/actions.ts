@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { db, verifyPassword, hashPassword } from "./db";
+import { db, tx, verifyPassword, hashPassword } from "./db";
 import { SESSION_COOKIE, sessionCookie, getSessionUser } from "./session";
 import { resolveChain, isDescendant, getForm, currentTier } from "./repo";
 import { ALL_ASPECTS, divisorFor } from "./scoring";
@@ -60,20 +60,22 @@ function validateFormInput(user: { id: number; role: string }, input: FormInput,
 }
 
 function persistFormContent(formId: number, input: FormInput) {
-  const d = db();
-  const delScores = d.prepare("DELETE FROM scores WHERE form_id = ?");
-  const insScore = d.prepare("INSERT INTO scores (form_id, aspect_no, score) VALUES (?, ?, ?)");
-  delScores.run(formId);
-  for (const a of ALL_ASPECTS) {
-    const s = input.scores[a.no];
-    if (s) insScore.run(formId, a.no, s);
-  }
-  d.prepare("UPDATE forms SET period_start = ?, period_end = ?, notes = ? WHERE id = ?").run(
-    input.period_start,
-    input.period_end,
-    input.notes || null,
-    formId
-  );
+  tx(() => {
+    const d = db();
+    const delScores = d.prepare("DELETE FROM scores WHERE form_id = ?");
+    const insScore = d.prepare("INSERT INTO scores (form_id, aspect_no, score) VALUES (?, ?, ?)");
+    delScores.run(formId);
+    for (const a of ALL_ASPECTS) {
+      const s = input.scores[a.no];
+      if (s) insScore.run(formId, a.no, s);
+    }
+    d.prepare("UPDATE forms SET period_start = ?, period_end = ?, notes = ? WHERE id = ?").run(
+      input.period_start,
+      input.period_end,
+      input.notes || null,
+      formId
+    );
+  });
   // catatan: treatment TIDAK diisi di sini — treatment ditetapkan reviewer Tier 2 (lihat reviewAction)
 }
 
@@ -140,7 +142,7 @@ export async function saveReviewEditAction(input: FormInput): Promise<ActionResu
       const changed = Object.keys({ ...orig, ...input.scores })
         .map(Number)
         .filter((n) => (input.scores[n] ?? null) !== (orig[n] ?? null));
-      db().prepare("UPDATE forms SET tier2_edits = ? WHERE id = ?").run(JSON.stringify(changed), form.id);
+      tx(() => db().prepare("UPDATE forms SET tier2_edits = ? WHERE id = ?").run(JSON.stringify(changed), form.id));
     } catch {
       /* snapshot rusak — lewati penandaan */
     }
@@ -156,21 +158,22 @@ export async function submitFormAction(input: FormInput & { signature: string })
   if (err) return { ok: false, error: err };
 
   const formId = owned.formId;
-  persistFormContent(formId, input);
-
   const user = (await getSessionUser())!;
   const { t2, mdFinal } = resolveChain(user.id);
   const nextStatus = t2 ? "review2" : "awaiting_ack";
-  db()
-    .prepare(
-      `UPDATE forms
-       SET employee_signature = ?, employee_signed_at = datetime('now'),
-           status = ?, submitted_at = datetime('now'),
-           reviewer1_id = ?, reviewer2_id = ?, reviewer3_id = ?,
-           original_scores = ?, tier2_edits = NULL
-       WHERE id = ?`
-    )
-    .run(input.signature, nextStatus, user.id, t2, mdFinal, JSON.stringify(input.scores), formId);
+  tx(() => {
+    persistFormContent(formId, input);
+    db()
+      .prepare(
+        `UPDATE forms
+         SET employee_signature = ?, employee_signed_at = datetime('now'),
+             status = ?, submitted_at = datetime('now'),
+             reviewer1_id = ?, reviewer2_id = ?, reviewer3_id = ?,
+             original_scores = ?, tier2_edits = NULL
+         WHERE id = ?`
+      )
+      .run(input.signature, nextStatus, user.id, t2, mdFinal, JSON.stringify(input.scores), formId);
+  });
 
   return { ok: true, formId };
 }
@@ -206,11 +209,13 @@ export async function reviewAction(input: {
 
   if (tier === 2) {
     // Tier 2 yang menetapkan treatment saat menyetujui
-    db().prepare("DELETE FROM treatments WHERE form_id = ?").run(form.id);
-    const insTr = db().prepare("INSERT OR IGNORE INTO treatments (form_id, treatment) VALUES (?, ?)");
-    for (const t of input.treatments ?? []) insTr.run(form.id, t);
-    db().prepare("UPDATE forms SET treatment_other = ? WHERE id = ?").run(input.treatment_other || null, form.id);
-    db().prepare("UPDATE forms SET status = 'awaiting_ack' WHERE id = ?").run(form.id);
+    tx(() => {
+      db().prepare("DELETE FROM treatments WHERE form_id = ?").run(form.id);
+      const insTr = db().prepare("INSERT OR IGNORE INTO treatments (form_id, treatment) VALUES (?, ?)");
+      for (const t of input.treatments ?? []) insTr.run(form.id, t);
+      db().prepare("UPDATE forms SET treatment_other = ? WHERE id = ?").run(input.treatment_other || null, form.id);
+      db().prepare("UPDATE forms SET status = 'awaiting_ack' WHERE id = ?").run(form.id);
+    });
   } else {
     db().prepare("UPDATE forms SET status = 'completed', completed_at = datetime('now') WHERE id = ?").run(form.id);
   }
@@ -235,18 +240,20 @@ export async function acknowledgeAction(input: { formId: number; signature: stri
     )
     .run(form.id, user.id, input.signature);
 
-  if (form.reviewer3_id) {
-    // masih menunggu tanda tangan MD sebagai approver terakhir
-    db()
-      .prepare("UPDATE forms SET ack_signature = ?, ack_at = datetime('now'), status = 'review3' WHERE id = ?")
-      .run(input.signature, form.id);
-  } else {
-    db()
-      .prepare(
-        "UPDATE forms SET ack_signature = ?, ack_at = datetime('now'), status = 'completed', completed_at = datetime('now') WHERE id = ?"
-      )
-      .run(input.signature, form.id);
-  }
+  tx(() => {
+    if (form.reviewer3_id) {
+      // masih menunggu tanda tangan MD sebagai approver terakhir
+      db()
+        .prepare("UPDATE forms SET ack_signature = ?, ack_at = datetime('now'), status = 'review3' WHERE id = ?")
+        .run(input.signature, form.id);
+    } else {
+      db()
+        .prepare(
+          "UPDATE forms SET ack_signature = ?, ack_at = datetime('now'), status = 'completed', completed_at = datetime('now') WHERE id = ?"
+        )
+        .run(input.signature, form.id);
+    }
+  });
   return { ok: true, formId: form.id };
 }
 
@@ -275,16 +282,18 @@ export async function saveEmployeeAction(input: EmployeeInput): Promise<ActionRe
   const d = db();
   try {
     if (input.id) {
-      d.prepare(
-        `UPDATE employees SET emp_no = ?, name = ?, email = ?, position_id = ?, join_date = ?, supervisor_id = ?
-         WHERE id = ?`
-      ).run(
-        input.emp_no.trim(), input.name.trim(), email, input.position_id, input.join_date || null,
-        input.supervisor_id, input.id
-      );
-      if (input.new_password) {
-        d.prepare("UPDATE employees SET password_hash = ? WHERE id = ?").run(hashPassword(input.new_password), input.id);
-      }
+      tx(() => {
+        d.prepare(
+          `UPDATE employees SET emp_no = ?, name = ?, email = ?, position_id = ?, join_date = ?, supervisor_id = ?
+           WHERE id = ?`
+        ).run(
+          input.emp_no.trim(), input.name.trim(), email, input.position_id, input.join_date || null,
+          input.supervisor_id, input.id
+        );
+        if (input.new_password) {
+          d.prepare("UPDATE employees SET password_hash = ? WHERE id = ?").run(hashPassword(input.new_password), input.id);
+        }
+      });
       return { ok: true };
     }
     const password = input.new_password || input.emp_no.trim();
