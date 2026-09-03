@@ -3,11 +3,13 @@
 // "Employee Detail" Google Sheet (source of truth) into evalform.db.
 //
 // Usage:
-//   node scripts/import_employees.mjs [--dry-run] [--csv <file>] [--url <csv-url>]
+//   node scripts/import_employees.mjs --dry-run --url <csv-url>
+//   node scripts/import_employees.mjs --csv _scratch/employees.csv
 //
-// Default --csv: _scratch/employees.csv (export of the Google Sheet).
-// Fetch the latest export first with:
-//   node -e "fetch('https://docs.google.com/spreadsheets/d/1hwcKNpd6JGHUrX9gZAb2BcMSFrenATUEbGEfxGOCsOk/export?format=csv&gid=0').then(r=>r.text()).then(t=>require('fs').writeFileSync('_scratch/employees.csv',t))"
+// --url fetches a fresh export straight from the Google Sheet (needs link
+// sharing "Anyone with link -> Viewer"); --csv reads a local file instead.
+// Default --csv: _scratch/employees.csv.
+// Sheet export URL: https://docs.google.com/spreadsheets/d/<ID>/export?format=csv&gid=0
 //
 // The importer UPSERTS by email (safe to re-run) and never deletes data.
 // Positions are upserted as (department, division, name, is_managerial).
@@ -23,12 +25,36 @@ import path from "node:path";
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const csvArg = args.indexOf("--csv");
+const urlArg = args.indexOf("--url");
 const CSV_FILE = csvArg >= 0 ? args[csvArg + 1] : path.join(process.cwd(), "_scratch", "employees.csv");
+const CSV_URL = urlArg >= 0 ? args[urlArg + 1] : null;
 const DB_FILE = process.env.DB_DIR
   ? path.join(path.resolve(process.env.DB_DIR), "evalform.db")
   : path.join(process.cwd(), "data", "evalform.db");
 
-if (!fs.existsSync(CSV_FILE)) {
+// CSV source: --url (fresh from the sheet) wins over --csv / default file.
+let csvSource = path.basename(CSV_FILE);
+async function readCsvText() {
+  if (!CSV_URL) return fs.readFileSync(CSV_FILE, "utf8");
+  const res = await fetch(CSV_URL);
+  if (!res.ok) {
+    console.error(`Ambil CSV gagal: HTTP ${res.status} — share sheet sebagai "Anyone with link -> Viewer".`);
+    process.exit(1);
+  }
+  const text = await res.text();
+  if (/^\s*<html/i.test(text)) {
+    console.error("Yang ter-deliver bukan CSV tapi halaman Google (belum boleh diakses publik) — aktifkan link sharing Viewer.");
+    process.exit(1);
+  }
+  csvSource = "Google Sheet (--url)";
+  try {
+    fs.mkdirSync(path.dirname(CSV_FILE), { recursive: true });
+    fs.writeFileSync(CSV_FILE, text); // local copy for review
+  } catch { /* write-back is best-effort */ }
+  return text;
+}
+
+if (!CSV_URL && !fs.existsSync(CSV_FILE)) {
   console.error(`CSV not found: ${CSV_FILE}`);
   process.exit(1);
 }
@@ -82,7 +108,7 @@ const KNOWN_DEPARTMENTS = new Set([
   "Operational Support Department",
 ]);
 
-const rows = parseCsv(fs.readFileSync(CSV_FILE, "utf8"));
+const rows = parseCsv(await readCsvText());
 const employees = [];
 const problems = [];
 let dept = null, div = null;
@@ -195,7 +221,7 @@ for (const e of employees) dupEmpNo[e.emp_no] = (dupEmpNo[e.emp_no] ?? 0) + 1;
 const dupEmail = {};
 for (const e of employees) dupEmail[e.email_l] = (dupEmail[e.email_l] ?? 0) + 1;
 
-console.log(`\n=== ${dryRun ? "DRY-RUN" : "IMPORT"} ${path.basename(CSV_FILE)} -> ${path.relative(process.cwd(), DB_FILE)} ===`);
+console.log(`\n=== ${dryRun ? "DRY-RUN" : "IMPORT"} ${csvSource} -> ${path.relative(process.cwd(), DB_FILE)} ===`);
 console.log(`Employees rows      : ${employees.length}`);
 console.log(`Distinct emails     : ${new Set(employees.map((e) => e.email_l)).size}${Object.entries(dupEmail).filter(([, n]) => n > 1).length ? " !! dup: " + Object.entries(dupEmail).filter(([, n]) => n > 1).map(([k, n]) => `${k} x${n}`).join(", ") : ""}`);
 console.log(`Shared emp_no (OK)  : ${Object.entries(dupEmpNo).filter(([, n]) => n > 1).map(([k, n]) => `${k} x${n}`).join(", ") || "-"}`);
