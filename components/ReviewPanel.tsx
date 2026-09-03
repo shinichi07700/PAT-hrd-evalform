@@ -30,6 +30,12 @@ export default function ReviewPanel({ formId, tier, signerName, treatments: init
     if (tier === 2 && !comment.trim()) {
       return setError("Komentar / catatan review wajib diisi oleh reviewer Tier 2.");
     }
+    if (tier === 2 && treatments.length === 0) {
+      return setError("Treatment wajib dipilih minimal satu sebelum menyetujui.");
+    }
+    if (tier === 2 && treatments.includes("lain_lain") && !treatmentOther.trim()) {
+      return setError('Treatment "Lain-lain" wajib dituliskan maksudnya.');
+    }
     setBusy(true);
     setError(null);
     const res = await reviewAction({
@@ -55,7 +61,7 @@ export default function ReviewPanel({ formId, tier, signerName, treatments: init
 
       {tier === 2 ? (
         <div className="field">
-          <label>Treatment (berdasarkan hasil penilaian)</label>
+          <label>Treatment (berdasarkan hasil penilaian) * (wajib dipilih)</label>
           <div className="grid-2" style={{ marginTop: 6 }}>
             {TREATMENTS.map((t) => (
               <label key={t.key} className="checkbox-row" style={{ fontWeight: 400, color: "var(--ink)" }}>
@@ -72,7 +78,7 @@ export default function ReviewPanel({ formId, tier, signerName, treatments: init
           </div>
           {treatments.includes("lain_lain") && (
             <div className="field" style={{ marginTop: 8 }}>
-              <label>Lain-lain (sebutkan)</label>
+              <label>Lain-lain (sebutkan) * (wajib diisi)</label>
               <input type="text" value={treatmentOther} onChange={(e) => setTreatmentOther(e.target.value)} />
             </div>
           )}

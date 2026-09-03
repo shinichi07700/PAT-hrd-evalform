@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { db, tx, verifyPassword, hashPassword } from "./db";
 import { SESSION_COOKIE, sessionCookie, getSessionUser } from "./session";
 import { chainForEmployee, getForm, currentTier } from "./repo";
-import { ALL_ASPECTS, divisorFor } from "./scoring";
+import { ALL_ASPECTS, divisorFor, TREATMENTS } from "./scoring";
 
 export interface ActionResult {
   ok: boolean;
@@ -202,6 +202,15 @@ export async function reviewAction(input: {
   if (!input.signature) return { ok: false, error: "Tanda tangan wajib dibuat untuk menyetujui." };
   // komentar wajib untuk Tier 2 (catatan penilaian), opsional untuk MD
   if (tier === 2 && !input.comment.trim()) return { ok: false, error: "Komentar / catatan review wajib diisi oleh reviewer Tier 2." };
+  // treatment juga wajib ditetapkan Tier 2 — form tidak boleh lanjut ke tahap pengakuan
+  // karyawan tanpa keputusan tindak lanjut atas hasil penilaian
+  let pickedTreatments: string[] = [];
+  if (tier === 2) {
+    pickedTreatments = (input.treatments ?? []).filter((t) => TREATMENTS.some((x) => x.key === t));
+    if (pickedTreatments.length === 0) return { ok: false, error: "Treatment wajib dipilih minimal satu sebelum menyetujui." };
+    if (pickedTreatments.includes("lain_lain") && !input.treatment_other?.trim())
+      return { ok: false, error: 'Treatment "Lain-lain" wajib dituliskan maksudnya.' };
+  }
 
   db()
     .prepare(
@@ -214,8 +223,8 @@ export async function reviewAction(input: {
     tx(() => {
       db().prepare("DELETE FROM treatments WHERE form_id = ?").run(form.id);
       const insTr = db().prepare("INSERT OR IGNORE INTO treatments (form_id, treatment) VALUES (?, ?)");
-      for (const t of input.treatments ?? []) insTr.run(form.id, t);
-      db().prepare("UPDATE forms SET treatment_other = ? WHERE id = ?").run(input.treatment_other || null, form.id);
+      for (const t of pickedTreatments) insTr.run(form.id, t);
+      db().prepare("UPDATE forms SET treatment_other = ? WHERE id = ?").run(input.treatment_other?.trim() || null, form.id);
       db().prepare("UPDATE forms SET status = 'awaiting_ack' WHERE id = ?").run(form.id);
     });
   } else {
